@@ -43,6 +43,74 @@
  *********************************************************************************
  */
 
+static int read18Bits (struct wiringPiNodeStruct *node)
+{
+  unsigned char buffer [4] ;
+  int value = 0 ;
+  read (node->fd, buffer, 4) ;
+  while (buffer[3] & 128)
+  {
+    read (node->fd, buffer, 4) ;
+  }
+  value = ((buffer [0] & 0x1) << 16) | (buffer [1] << 8) | buffer [2] ;
+  if (buffer [0] & 0x2)
+  {
+    value = ~(0x20000 - value) + 1 ;
+  }
+  return value;
+}
+
+static int read16Bits (struct wiringPiNodeStruct *node)
+{
+  unsigned char buffer [3] ;
+  int value = 0 ;
+  read (node->fd, buffer, 3) ;
+  while (buffer [2] & 128)
+  {
+    read (node->fd, buffer, 3) ;
+  }
+  value = ((buffer [0] & 0x7F) << 8) | buffer [1] ;
+  if (buffer [0] & 0x80)
+  {
+    value = ~(0x8000 - value) + 1 ;
+  }
+  return value;
+}
+
+static int read14Bits (struct wiringPiNodeStruct *node)
+{
+  unsigned char buffer [3] ;
+  int value = 0 ;
+  read (node->fd, buffer, 3) ;
+  while (buffer [2] & 128)
+  {
+    read (node->fd, buffer, 3) ;
+  }
+  value = ((buffer [0] & 0x1F) << 8) | buffer [1] ;
+  if (buffer [0] & 0x20)
+  {
+    value = ~(0x2000 - value) + 1 ;
+  }
+  return value;
+}
+
+static int read12Bits (struct wiringPiNodeStruct *node)
+{
+  unsigned char buffer [3] ;
+  int value = 0 ;
+  read (node->fd, buffer, 3) ;
+  while (buffer [2] & 128)
+  {
+    read (node->fd, buffer, 3) ;
+  }
+  value = ((buffer [0] & 0x07) << 8) | buffer [1] ;
+  if (buffer [0] & 0x8)
+  {
+    value = ~(0x800 - value) + 1 ;
+  }
+  return value;
+}
+
 int myAnalogRead (struct wiringPiNodeStruct *node, int chan)
 {
   unsigned char config ;
@@ -54,31 +122,23 @@ int myAnalogRead (struct wiringPiNodeStruct *node, int chan)
   config = 0x80 | ((chan - node->pinBase) << 5) | (node->data0 << 2) | (node->data1) ;
   
   wiringPiI2CWrite (node->fd, config) ;
-
+  
   switch (node->data0)	// Sample rate
   {
     case MCP3422_SR_3_75:			// 18 bits
-      delay (270) ;
-      read (node->fd, buffer, 4) ;
-      value = ((buffer [0] & 3) << 16) | (buffer [1] << 8) | buffer [0] ;
+      value = read18Bits(node);
       break ;
 
     case MCP3422_SR_15:				// 16 bits
-      delay ( 70) ;
-      read (node->fd, buffer, 3) ;
-      value = (buffer [0] << 8) | buffer [1] ;
+      value = read16Bits(node);
       break ;
 
     case MCP3422_SR_60:				// 14 bits
-      delay ( 17) ;
-      read (node->fd, buffer, 3) ;
-      value = ((buffer [0] & 0x3F) << 8) | buffer [1] ;
+      value = read14Bits(node);
       break ;
 
     case MCP3422_SR_240:			// 12 bits
-      delay (  5) ;
-      read (node->fd, buffer, 3) ;
-      value = ((buffer [0] & 0x0F) << 8) | buffer [0] ;
+      value = read12Bits(node);
       break ;
   }
 
