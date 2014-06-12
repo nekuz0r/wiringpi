@@ -55,7 +55,8 @@ SRC	=	wiringPi.c						\
 		mcp3002.c mcp3004.c mcp4802.c mcp3422.c			\
 		max31855.c max5322.c					\
 		sn3218.c						\
-		drcSerial.c
+		drcSerial.c	\
+		pca9685.c
 
 OBJ	=	$(SRC:.c=.o)
 
@@ -115,6 +116,8 @@ install-headers:
 	@install -m 0644 pcf8574.h		$(DESTDIR)$(PREFIX)/include
 	@install -m 0644 pcf8591.h		$(DESTDIR)$(PREFIX)/include
 	@install -m 0644 sn3218.h		$(DESTDIR)$(PREFIX)/include
+	@install -m 0644 pca9685.h		$(DESTDIR)$(PREFIX)/include
+	@install -m 0644 pca9685reg.h	$(DESTDIR)$(PREFIX)/include
 
 .PHONEY:	install
 install:	$(DYNAMIC) install-headers
@@ -156,6 +159,8 @@ uninstall:
 	@rm -f $(DESTDIR)$(PREFIX)/include/pcf8574.h
 	@rm -f $(DESTDIR)$(PREFIX)/include/pcf8591.h
 	@rm -f $(DESTDIR)$(PREFIX)/include/sn3218.h
+	@rm -f $(DESTDIR)$(PREFIX)/include/pca9685.h
+	@rm -f $(DESTDIR)$(PREFIX)/include/pca9685reg.h
 	@rm -f $(DESTDIR)$(PREFIX)/lib/libwiringPi.*
 	@ldconfig
 
@@ -191,3 +196,4 @@ max31855.o: wiringPi.h wiringPiSPI.h max31855.h
 max5322.o: wiringPi.h wiringPiSPI.h max5322.h
 sn3218.o: wiringPi.h wiringPiI2C.h sn3218.h
 drc.o: wiringPi.h wiringSerial.h drc.h
+pca9685.o: wiringPi.h pca9685.h pca9685reg.h
