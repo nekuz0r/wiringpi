@@ -1202,6 +1202,41 @@ void analogWrite (int pin, int value)
   node->analogWrite (node, pin, value) ;
 }
 
+/*
+ * pulseIn:
+ *  Reads a pulse (either HIGH or LOW) on a pin.
+ *  Return the length of the pulse in microseconds.
+ *  Gives up and returns 0 if no pulse starts.
+ *  Works on pulses from 100 microseconds to 3000 microseconds in length (need more tests)
+ *********************************************************************************
+ */
+ 
+int pulseIn (int pin, int state)
+{
+  #define MAX_LOOPS 1000000
+  unsigned int numloops = 0;
+
+  while (digitalRead(pin) == state)
+  {
+    if (numloops++ == MAX_LOOPS)
+      return 0 ;
+  }
+
+  while (digitalRead(pin) != state)
+  {
+    if (numloops++ == MAX_LOOPS)
+      return 0 ;
+  }
+
+  int timerStart = micros();
+  while (digitalRead(pin) == state)
+  {
+    if (numloops++ == MAX_LOOPS)
+      return 0 ;
+  }
+
+  return micros() - timerStart ;
+}
 
 
 /*

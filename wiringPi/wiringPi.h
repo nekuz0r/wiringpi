@@ -137,6 +137,7 @@ extern void digitalWrite        (int pin, int value) ;
 extern void pwmWrite            (int pin, int value) ;
 extern int  analogRead          (int pin) ;
 extern void analogWrite         (int pin, int value) ;
+extern int  pulseIn             (int pin, int state) ;
 
 // PiFace specifics 
 //	(Deprecated)
