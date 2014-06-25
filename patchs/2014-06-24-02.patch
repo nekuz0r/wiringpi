@@ -1,0 +1,25 @@
+From 7cbb8865c8dc6675618a17492a1175c278d38685 Mon Sep 17 00:00:00 2001
+From: Gordon Henderson <projects@drogon.net>
+Date: Tue, 24 Jun 2014 19:25:42 +0100
+Subject: [PATCH] Bumped version to 2.15
+
+---
+ gpio/gpio.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gpio/gpio.c b/gpio/gpio.c
+index c6021d4..b2f9953 100644
+--- a/gpio/gpio.c
++++ b/gpio/gpio.c
+@@ -55,7 +55,7 @@ extern void doPins       (void) ;
+ #  define	FALSE	(1==2)
+ #endif
+ 
+-#define	VERSION		"2.14"
++#define	VERSION		"2.15"
+ #define	I2CDETECT	"/usr/sbin/i2cdetect"
+ 
+ int wpMode ;
+-- 
+1.7.2.5
+
