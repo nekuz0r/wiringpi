@@ -73,9 +73,9 @@ void tcs34725Enable(int id)
 {
   int fd = tcs34725_fds[id];
   
-  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE_PON);
+  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE, TCS34725_ENABLE_PON);
   delay(3);
-  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE_PON | TCS34725_ENABLE_AEN);
+  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE, TCS34725_ENABLE_PON | TCS34725_ENABLE_AEN);
 }
 
 void tcs34725Disable(int id)
