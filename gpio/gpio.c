@@ -46,8 +46,6 @@ extern int wiringPiDebug ;
 // External functions I can't be bothered creating a separate .h file for:
 
 extern void doReadall    (void) ;
-extern void doReadallOld (void) ;
-
 extern void doPins       (void) ;
 
 #ifndef TRUE
@@ -55,8 +53,9 @@ extern void doPins       (void) ;
 #  define	FALSE	(1==2)
 #endif
 
-#define	VERSION		"2.16"
-#define	I2CDETECT	"/usr/sbin/i2cdetect"
+#define	VERSION			"2.20"
+#define	PI_USB_POWER_CONTROL	38
+#define	I2CDETECT		"/usr/sbin/i2cdetect"
 
 int wpMode ;
 
@@ -75,6 +74,7 @@ char *usage = "Usage: gpio -v\n"
 	      "       gpio pwmc <divider> \n"
 	      "       gpio load spi/i2c\n"
 	      "       gpio i2cd/i2cdetect\n"
+	      "       gpio usbp high/low\n"
 	      "       gpio gbr <channel>\n"
 	      "       gpio gbw <channel> <value>" ;	// No trailing newline needed here.
 
@@ -654,16 +654,17 @@ void doMode (int argc, char *argv [])
 
   mode = argv [3] ;
 
-  /**/ if (strcasecmp (mode, "in")     == 0) pinMode         (pin, INPUT) ;
-  else if (strcasecmp (mode, "input")  == 0) pinMode         (pin, INPUT) ;
-  else if (strcasecmp (mode, "out")    == 0) pinMode         (pin, OUTPUT) ;
-  else if (strcasecmp (mode, "output") == 0) pinMode         (pin, OUTPUT) ;
-  else if (strcasecmp (mode, "pwm")    == 0) pinMode         (pin, PWM_OUTPUT) ;
-  else if (strcasecmp (mode, "clock")  == 0) pinMode         (pin, GPIO_CLOCK) ;
-  else if (strcasecmp (mode, "up")     == 0) pullUpDnControl (pin, PUD_UP) ;
-  else if (strcasecmp (mode, "down")   == 0) pullUpDnControl (pin, PUD_DOWN) ;
-  else if (strcasecmp (mode, "tri")    == 0) pullUpDnControl (pin, PUD_OFF) ;
-  else if (strcasecmp (mode, "off")    == 0) pullUpDnControl (pin, PUD_OFF) ;
+  /**/ if (strcasecmp (mode, "in")      == 0) pinMode         (pin, INPUT) ;
+  else if (strcasecmp (mode, "input")   == 0) pinMode         (pin, INPUT) ;
+  else if (strcasecmp (mode, "out")     == 0) pinMode         (pin, OUTPUT) ;
+  else if (strcasecmp (mode, "output")  == 0) pinMode         (pin, OUTPUT) ;
+  else if (strcasecmp (mode, "pwm")     == 0) pinMode         (pin, PWM_OUTPUT) ;
+  else if (strcasecmp (mode, "pwmTone") == 0) pinMode         (pin, PWM_TONE_OUTPUT) ;
+  else if (strcasecmp (mode, "clock")   == 0) pinMode         (pin, GPIO_CLOCK) ;
+  else if (strcasecmp (mode, "up")      == 0) pullUpDnControl (pin, PUD_UP) ;
+  else if (strcasecmp (mode, "down")    == 0) pullUpDnControl (pin, PUD_DOWN) ;
+  else if (strcasecmp (mode, "tri")     == 0) pullUpDnControl (pin, PUD_OFF) ;
+  else if (strcasecmp (mode, "off")     == 0) pullUpDnControl (pin, PUD_OFF) ;
 
 // Undocumented
 
@@ -717,6 +718,58 @@ static void doPadDrive (int argc, char *argv [])
 
 
 /*
+ * doUsbP:
+ *	Control USB Power - High (1.2A) or Low (600mA)
+ *	gpio usbp high/low
+ *********************************************************************************
+ */
+
+static void doUsbP (int argc, char *argv [])
+{
+  int model, rev, mem, maker, overVolted ;
+
+  if (argc != 3)
+  {
+    fprintf (stderr, "Usage: %s usbp high|low\n", argv [0]) ;
+    exit (1) ;
+  }
+
+// Make sure we're on a B+
+
+  piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
+
+  if (model != PI_MODEL_BP)
+  {
+    fprintf (stderr, "USB power contol is applicable to B+ boards only.\n") ;
+    exit (1) ;
+  }
+    
+// Need to force BCM_GPIO mode:
+
+  wiringPiSetupGpio () ;
+
+  if ((strcasecmp (argv [2], "high") == 0) || (strcasecmp (argv [2], "hi") == 0))
+  {
+    digitalWrite (PI_USB_POWER_CONTROL, 1) ;
+    pinMode (PI_USB_POWER_CONTROL, OUTPUT) ;
+    printf ("Switched to HIGH current USB (1.2A)\n") ;
+    return ;
+  }
+
+  if ((strcasecmp (argv [2], "low") == 0) || (strcasecmp (argv [2], "lo") == 0))
+  {
+    digitalWrite (PI_USB_POWER_CONTROL, 0) ;
+    pinMode (PI_USB_POWER_CONTROL, OUTPUT) ;
+    printf ("Switched to LOW current USB (600mA)\n") ;
+    return ;
+  }
+
+  fprintf (stderr, "Usage: %s usbp high|low\n", argv [0]) ;
+  exit (1) ;
+}
+
+
+/*
  * doGbw:
  *	gpio gbw channel value
  *	Gertboard Write - To the Analog output
@@ -742,7 +795,7 @@ static void doGbw (int argc, char *argv [])
     exit (1) ;
   }
 
-  if ((value < 0) || (value > 1023))
+  if ((value < 0) || (value > 255))
   {
     fprintf (stderr, "%s: gbw: Value must be from 0 to 255\n", argv [0]) ;
     exit (1) ;
@@ -933,6 +986,30 @@ void doToggle (int argc, char *argv [])
   digitalWrite (pin, !digitalRead (pin)) ;
 }
 
+
+/*
+ * doPwmTone:
+ *	Output a tone in a PWM pin
+ *********************************************************************************
+ */
+
+void doPwmTone (int argc, char *argv [])
+{
+  int pin, freq ;
+
+  if (argc != 4)
+  {
+    fprintf (stderr, "Usage: %s pwmTone <pin> <freq>\n", argv [0]) ;
+    exit (1) ;
+  }
+
+  pin = atoi (argv [2]) ;
+  freq = atoi (argv [3]) ;
+
+  pwmToneWrite (pin, freq) ;
+}
+
+
 /*
  * doClock:
  *	Output a clock on a pin
@@ -1044,8 +1121,7 @@ static void doPwmClock (int argc, char *argv [])
 int main (int argc, char *argv [])
 {
   int i ;
-  int model, rev, mem ;
-  char *maker ;
+  int model, rev, mem, maker, overVolted ;
 
   if (getenv ("WIRINGPI_DEBUG") != NULL)
   {
@@ -1090,17 +1166,26 @@ int main (int argc, char *argv [])
     printf ("This is free software with ABSOLUTELY NO WARRANTY.\n") ;
     printf ("For details type: %s -warranty\n", argv [0]) ;
     printf ("\n") ;
-    piBoardId (&model, &rev, &mem, &maker) ;
-    printf ("Raspberry Pi Details:\n") ;
-    printf ("  Type: %s, Revision: %s, Memory: %dMB, Maker: %s\n", 
-	piModelNames [model], piRevisionNames [rev], mem, maker) ;
+    piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
+    if (model == PI_MODEL_UNKNOWN)
+    {
+      printf ("Your Raspberry Pi has an unknown model type. Please report this to\n") ;
+      printf ("    projects@drogon.net\n") ;
+      printf ("with a copy of your /proc/cpuinfo if possible\n") ;
+    }
+    else
+    {
+      printf ("Raspberry Pi Details:\n") ;
+      printf ("  Type: %s, Revision: %s, Memory: %dMB, Maker: %s %s\n", 
+	  piModelNames [model], piRevisionNames [rev], mem, piMakerNames [maker], overVolted ? "[OV]" : "") ;
+    }
     return 0 ;
   }
 
   if (strcasecmp (argv [1], "-warranty") == 0)
   {
     printf ("gpio version: %s\n", VERSION) ;
-    printf ("Copyright (c) 2012-2013 Gordon Henderson\n") ;
+    printf ("Copyright (c) 2012-2014 Gordon Henderson\n") ;
     printf ("\n") ;
     printf ("    This program is free software; you can redistribute it and/or modify\n") ;
     printf ("    it under the terms of the GNU Leser General Public License as published\n") ;
@@ -1228,8 +1313,10 @@ int main (int argc, char *argv [])
   else if (strcasecmp (argv [1], "pwm-ms"   ) == 0) doPwmMode    (PWM_MODE_MS) ;
   else if (strcasecmp (argv [1], "pwmr"     ) == 0) doPwmRange   (argc, argv) ;
   else if (strcasecmp (argv [1], "pwmc"     ) == 0) doPwmClock   (argc, argv) ;
+  else if (strcasecmp (argv [1], "pwmTone"  ) == 0) doPwmTone    (argc, argv) ;
   else if (strcasecmp (argv [1], "drive"    ) == 0) doPadDrive   (argc, argv) ;
-  else if (strcasecmp (argv [1], "readall"  ) == 0) doReadallOld () ;
+  else if (strcasecmp (argv [1], "usbp"     ) == 0) doUsbP       (argc, argv) ;
+  else if (strcasecmp (argv [1], "readall"  ) == 0) doReadall    () ;
   else if (strcasecmp (argv [1], "nreadall" ) == 0) doReadall    () ;
   else if (strcasecmp (argv [1], "pins"     ) == 0) doPins       () ;
   else if (strcasecmp (argv [1], "i2cdetect") == 0) doI2Cdetect  (argc, argv) ;

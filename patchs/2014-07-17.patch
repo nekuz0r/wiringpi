@@ -1,0 +1,982 @@
+From df45388f6431f7baba31ac1e8e242d89828637a0 Mon Sep 17 00:00:00 2001
+From: Gordon Henderson <projects@drogon.net>
+Date: Thu, 17 Jul 2014 22:23:57 +0100
+Subject: [PATCH] Fixed a bug in the gpio readall command on model B's (caused
+ by a side-effect of changing it for the B+)
+
+Aded a gpio command: usbp hi/low - to change the usb power
+---
+ build               |   9 +-
+ gpio/gpio.1         |  15 +++-
+ gpio/gpio.c         |  83 ++++++++++++++++---
+ gpio/pins.c         |  56 +------------
+ gpio/readall.c      | 232 ++++++++++++++++++----------------------------------
+ wiringPi/Makefile   |   4 +-
+ wiringPi/wiringPi.c | 159 ++++++++++++++++++++++-------------
+ wiringPi/wiringPi.h |  35 ++++++--
+ 8 files changed, 304 insertions(+), 289 deletions(-)
+
+diff --git a/build b/build
+index e17cf18..bac483a 100755
+--- a/build
++++ b/build
+@@ -94,7 +94,10 @@ fi
+ echo
+ echo All Done.
+ echo ""
+-echo "NOTE: This is wiringPi v2, and if you need to use the lcd, Piface,"
+-echo "  Gertboard, MaxDetext, etc. routines then you must change your"
+-echo "  compile scripts to add -lwiringPiDev"
++echo "NOTE: To compile programs with wiringPi, you need to add:"
++echo "    -lwiringPi"
++echo "  to your compile line(s) To use the Gertboard, MaxDetect, etc."
++echo "  code (the devLib), you need to also add:"
++echo "    -lwiringPiDev"
++echo "  to your compile line(s)."
+ echo ""
+diff --git a/gpio/gpio.1 b/gpio/gpio.1
+index 7300466..e7131c1 100644
+--- a/gpio/gpio.1
++++ b/gpio/gpio.1
+@@ -13,11 +13,11 @@ gpio \- Command-line access to Raspberry Pi's GPIO
+ .PP
+ .B gpio
+ .B [ \-x extension:params ]
+-.B mode/read/write/aread/awrite/pwm ...
++.B mode/read/write/aread/awrite/pwm/pwmTone ...
+ .PP
+ .B gpio
+ .B [ \-p ]
+-.B read/write/wb
++.B read/write/toggle/wb
+ .B ...
+ .PP
+ .B gpio
+@@ -39,6 +39,10 @@ gpio \- Command-line access to Raspberry Pi's GPIO
+ group value
+ .PP
+ .B gpio
++.B usbp
++high | low
++.PP
++.B gpio
+ .B pwm-bal/pwm-ms
+ .PP
+ .B gpio
+@@ -232,6 +236,13 @@ value. Group is 0, 1 or 2 and value is 0-7. Do not use unless you are
+ absolutely sure you know what you're doing.
+ 
+ .TP
++.B usbp
++high | low
++
++Change the USB current limiter to high (1.2 amps) or low (the default, 600mA)
++This is only applicable to the model B+
++
++.TP
+ .B pwm-bal/pwm-ms 
+ Change the PWM mode to balanced (the default) or mark:space ratio (traditional)
+ 
+diff --git a/gpio/gpio.c b/gpio/gpio.c
+index be22e0e..c440874 100644
+--- a/gpio/gpio.c
++++ b/gpio/gpio.c
+@@ -46,8 +46,6 @@ extern int wiringPiDebug ;
+ // External functions I can't be bothered creating a separate .h file for:
+ 
+ extern void doReadall    (void) ;
+-extern void doReadallOld (void) ;
+-
+ extern void doPins       (void) ;
+ 
+ #ifndef TRUE
+@@ -55,8 +53,9 @@ extern void doPins       (void) ;
+ #  define	FALSE	(1==2)
+ #endif
+ 
+-#define	VERSION		"2.18"
+-#define	I2CDETECT	"/usr/sbin/i2cdetect"
++#define	VERSION			"2.20"
++#define	PI_USB_POWER_CONTROL	38
++#define	I2CDETECT		"/usr/sbin/i2cdetect"
+ 
+ int wpMode ;
+ 
+@@ -75,6 +74,7 @@ char *usage = "Usage: gpio -v\n"
+ 	      "       gpio pwmc <divider> \n"
+ 	      "       gpio load spi/i2c\n"
+ 	      "       gpio i2cd/i2cdetect\n"
++	      "       gpio usbp high/low\n"
+ 	      "       gpio gbr <channel>\n"
+ 	      "       gpio gbw <channel> <value>" ;	// No trailing newline needed here.
+ 
+@@ -718,6 +718,58 @@ static void doPadDrive (int argc, char *argv [])
+ 
+ 
+ /*
++ * doUsbP:
++ *	Control USB Power - High (1.2A) or Low (600mA)
++ *	gpio usbp high/low
++ *********************************************************************************
++ */
++
++static void doUsbP (int argc, char *argv [])
++{
++  int model, rev, mem, maker, overVolted ;
++
++  if (argc != 3)
++  {
++    fprintf (stderr, "Usage: %s usbp high|low\n", argv [0]) ;
++    exit (1) ;
++  }
++
++// Make sure we're on a B+
++
++  piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
++
++  if (model != PI_MODEL_BP)
++  {
++    fprintf (stderr, "USB power contol is applicable to B+ boards only.\n") ;
++    exit (1) ;
++  }
++    
++// Need to force BCM_GPIO mode:
++
++  wiringPiSetupGpio () ;
++
++  if ((strcasecmp (argv [2], "high") == 0) || (strcasecmp (argv [2], "hi") == 0))
++  {
++    digitalWrite (PI_USB_POWER_CONTROL, 1) ;
++    pinMode (PI_USB_POWER_CONTROL, OUTPUT) ;
++    printf ("Switched to HIGH current USB (1.2A)\n") ;
++    return ;
++  }
++
++  if ((strcasecmp (argv [2], "low") == 0) || (strcasecmp (argv [2], "lo") == 0))
++  {
++    digitalWrite (PI_USB_POWER_CONTROL, 0) ;
++    pinMode (PI_USB_POWER_CONTROL, OUTPUT) ;
++    printf ("Switched to LOW current USB (600mA)\n") ;
++    return ;
++  }
++
++  fprintf (stderr, "Usage: %s usbp high|low\n", argv [0]) ;
++  exit (1) ;
++}
++
++
++/*
+  * doGbw:
+  *	gpio gbw channel value
+  *	Gertboard Write - To the Analog output
+@@ -1069,8 +1121,7 @@ static void doPwmClock (int argc, char *argv [])
+ int main (int argc, char *argv [])
+ {
+   int i ;
+-  int model, rev, mem ;
+-  char *maker ;
++  int model, rev, mem, maker, overVolted ;
+ 
+   if (getenv ("WIRINGPI_DEBUG") != NULL)
+   {
+@@ -1115,10 +1166,19 @@ int main (int argc, char *argv [])
+     printf ("This is free software with ABSOLUTELY NO WARRANTY.\n") ;
+     printf ("For details type: %s -warranty\n", argv [0]) ;
+     printf ("\n") ;
+-    piBoardId (&model, &rev, &mem, &maker) ;
+-    printf ("Raspberry Pi Details:\n") ;
+-    printf ("  Type: %s, Revision: %s, Memory: %dMB, Maker: %s\n", 
+-	piModelNames [model], piRevisionNames [rev], mem, maker) ;
++    piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
++    if (model == PI_MODEL_UNKNOWN)
++    {
++      printf ("Your Raspberry Pi has an unknown model type. Please report this to\n") ;
++      printf ("    projects@drogon.net\n") ;
++      printf ("with a copy of your /proc/cpuinfo if possible\n") ;
++    }
++    else
++    {
++      printf ("Raspberry Pi Details:\n") ;
++      printf ("  Type: %s, Revision: %s, Memory: %dMB, Maker: %s %s\n", 
++	  piModelNames [model], piRevisionNames [rev], mem, piMakerNames [maker], overVolted ? "[OV]" : "") ;
++    }
+     return 0 ;
+   }
+ 
+@@ -1255,7 +1315,8 @@ int main (int argc, char *argv [])
+   else if (strcasecmp (argv [1], "pwmc"     ) == 0) doPwmClock   (argc, argv) ;
+   else if (strcasecmp (argv [1], "pwmTone"  ) == 0) doPwmTone    (argc, argv) ;
+   else if (strcasecmp (argv [1], "drive"    ) == 0) doPadDrive   (argc, argv) ;
+-  else if (strcasecmp (argv [1], "readall"  ) == 0) doReadallOld () ;
++  else if (strcasecmp (argv [1], "usbp"     ) == 0) doUsbP       (argc, argv) ;
++  else if (strcasecmp (argv [1], "readall"  ) == 0) doReadall    () ;
+   else if (strcasecmp (argv [1], "nreadall" ) == 0) doReadall    () ;
+   else if (strcasecmp (argv [1], "pins"     ) == 0) doPins       () ;
+   else if (strcasecmp (argv [1], "i2cdetect") == 0) doI2Cdetect  (argc, argv) ;
+diff --git a/gpio/pins.c b/gpio/pins.c
+index 457922d..19fcc1a 100644
+--- a/gpio/pins.c
++++ b/gpio/pins.c
+@@ -23,59 +23,11 @@
+ 
+ 
+ #include <stdio.h>
+-#include <stdlib.h>
+-#include <stdint.h>
+-#include <ctype.h>
+-#include <string.h>
+-#include <unistd.h>
+-#include <errno.h>
+-#include <fcntl.h>
+-#include <sys/types.h>
+-#include <sys/stat.h>
+-
+-#include <wiringPi.h>
+-
+-extern int wpMode ;
+ 
+ void doPins (void)
+ {
+-  int model, rev, mem ;
+-  char *maker ;
+-
+-  piBoardId (&model, &rev, &mem, &maker) ;
+-  if (model == PI_MODEL_CM)
+-  {
+-    printf ("This Raspberry Pi is a Compute Module.\n") ;
+-    printf ("    (who knows what's been done to the pins!)\n") ;
+-    return ;
+-  }
+-
+-  printf ("This Raspberry Pi is a revision %d board.\n", piBoardRev ()) ;
+-
+-  printf (
+-" +-----+--------+------------+--------+-----+\n"
+-" | Pin |   Name ||  P1 Pin  ||  Name  | Pin |\n"
+-" +-----+--------+------------+--------+-----+\n"
+-" |     |  3.3v  ||  1 oo 2  ||     5v |     |\n"
+-" |   8 |   SDA  ||  3 oo 4  ||     5v |     |\n"
+-" |   9 |    SCL ||  5 oo 6  ||    Gnd |     |\n"
+-" |   7 | GPIO 7 ||  7 oo 8  ||    TxD |  15 |\n"
+-" |     |    GND ||  9 oo 10 ||    RxD |  16 |\n"
+-" |   0 | GPIO 0 || 11 oo 12 || GPIO 1 |   1 |\n"
+-" |   2 | GPIO 2 || 13 oo 14 ||    Gnd |     |\n"
+-" |   3 | GPIO 3 || 15 oo 16 || GPIO 4 |   4 |\n"
+-" |     |   3.3v || 17 oo 18 || GPIO 5 |   5 |\n"
+-" |  12 |   MOSI || 19 oo 20 ||    Gnd |     |\n"
+-" |  13 |   MISO || 21 oo 22 || GPIO 6 |   6 |\n"
+-" |  14 |   SCLK || 23 oo 24 ||   CE 0 |  10 |\n"
+-" |     |    Gnd || 25 oo 26 ||   CE 1 |  11 |\n"
+-" +-----+--------+------------+--------+-----+\n") ;
+-
+-/***
+- +---
+- |  5v|  5v| Gnd | TxD | RxD | G1  | Gnd |  G4  |  G5  | G
+- |  2 |  4 |  6 |  8 | 10 | 12 | 14 | 16 | 18 | 20 | 22 | 24 | 26 |\n"
+- |  1 |  3 |  5 |  7 |  9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 |\n"
+-***/
+-
++  printf ("The pins command has been deprecated - sorry. Please use the\n") ;
++  printf ("  gpio readall\n") ;
++  printf ("command to get a list of the pinnouts for your Pi.\n") ;
+ }
++
+diff --git a/gpio/readall.c b/gpio/readall.c
+index a92e58c..76b5cfc 100644
+--- a/gpio/readall.c
++++ b/gpio/readall.c
+@@ -75,34 +75,11 @@ static void doReadallExternal (void)
+  *********************************************************************************
+  */
+ 
+-static char *pinNames [] =
+-{
+-  "GPIO 0", "GPIO 1", "GPIO 2", "GPIO 3", "GPIO 4", "GPIO 5", "GPIO 6", "GPIO 7",
+-  "SDA   ", "SCL   ",
+-  "CE0   ", "CE1   ", "MOSI  ", "MISO  ", "SCLK  ",
+-  "TxD   ", "RxD   ",
+-  "GPIO 8", "GPIO 9", "GPIO10", "GPIO11",
+-} ;
+-
+ static char *alts [] =
+ {
+   "IN", "OUT", "ALT5", "ALT4", "ALT0", "ALT1", "ALT2", "ALT3"
+ } ;
+ 
+-static int wpiToPhys [64] =
+-{
+-  11, 12, 13, 15, 16, 18, 22,  7,	//  0...7
+-   3,  5,				//  8...9
+-  24, 26, 19, 21, 23,			// 10..14
+-   8, 10,				// 15..16
+-  53, 54, 55, 56,			// 17..20
+-             0,0,0,0,0,0,0,0,0,0,0,	// 20..31
+-   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,	// 32..47
+-   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,	// 47..63
+-} ;
+-
+-// The other mappings needed are in wiringPi.c
+-
+ static int physToWpi [64] = 
+ {
+   -1,           // 0
+@@ -126,10 +103,14 @@ static int physToWpi [64] =
+   24, 27,
+   25, 28,
+   -1, 29,
+-                                      -1, -1, -1, -1, -1, -1, -1,       // ... 47
+-  -1, -1, -1, -1, -1,							// ... 52
+-  17, 18, 19, 20,							// ... 53, 54, 55, 56 - P5
+-  -1, -1, -1, -1, -1, -1, -1,						// ... 63
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  17, 18,
++  19, 20,
++  -1, -1, -1, -1, -1, -1, -1, -1, -1
+ } ;
+ 
+ static char *physNames [64] = 
+@@ -149,7 +130,7 @@ static char *physNames [64] =
+   "   MISO", "GPIO. 6",
+   "   SCLK", "CE0    ",
+   "     0v", "CE1    ",
+-  "  SDA.0", "SCL0   ",
++  "  SDA.0", "SCL.0  ",
+   "GPIO.21", "0v     ",
+   "GPIO.22", "GPIO.26",
+   "GPIO.23", "0v     ",
+@@ -166,29 +147,27 @@ static char *physNames [64] =
+    NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+ } ;
+ 
++
++/*
++ * readallPhys:
++ *	Given a physical pin output the data on it and the next pin:
++ *| BCM | wPi |   Name  | Mode | Val| Physical |Val | Mode | Name    | wPi | BCM |
++ *********************************************************************************
++ */
++
+ static void readallPhys (int physPin)
+ {
+   int pin ;
+ 
+-  /**/ if (wpMode == WPI_MODE_GPIO)
+-  {
+-    if (physPinToGpio (physPin) == -1)
+-      printf (" |    ") ;
+-    else
+-      printf (" | %3d", physPinToGpio (physPin)) ;
+-  }
+-  else if (wpMode != WPI_MODE_PHYS)
+-  {
+-    if (physToWpi     [physPin] == -1)
+-      printf (" |    ") ;
+-    else
+-      printf (" | %3d", physToWpi     [physPin]) ;
+-  }
++  if (physPinToGpio (physPin) == -1)
++    printf (" |     |    ") ;
++  else
++    printf (" | %3d | %3d", physPinToGpio (physPin), physToWpi [physPin]) ;
+ 
+   printf (" | %s", physNames [physPin]) ;
+ 
+   if (physToWpi [physPin] == -1)
+-    printf (" |      |   ") ;
++    printf (" |      |  ") ;
+   else
+   {
+     /**/ if (wpMode == WPI_MODE_GPIO)
+@@ -199,7 +178,7 @@ static void readallPhys (int physPin)
+       pin = physToWpi [physPin] ;
+ 
+     printf (" | %4s", alts [getAlt (pin)]) ;
+-    printf (" | %s", (digitalRead (pin) == LOW) ? "Lo" : "Hi") ;
++    printf (" | %d", digitalRead (pin)) ;
+   }
+ 
+ // Pin numbers:
+@@ -211,7 +190,7 @@ static void readallPhys (int physPin)
+ // Same, reversed
+ 
+   if (physToWpi [physPin] == -1)
+-    printf (" |    |     ") ;
++    printf (" |   |     ") ;
+   else
+   {
+     /**/ if (wpMode == WPI_MODE_GPIO)
+@@ -221,40 +200,24 @@ static void readallPhys (int physPin)
+     else
+       pin = physToWpi [physPin] ;
+ 
+-    printf (" | %s", (digitalRead (pin) == LOW) ? "Lo" : "Hi") ;
++    printf (" | %d", digitalRead (pin)) ;
+     printf (" | %-4s", alts [getAlt (pin)]) ;
+   }
+ 
+   printf (" | %-5s", physNames [physPin]) ;
+ 
+-  /**/ if (wpMode == WPI_MODE_GPIO)
+-  {
+-    if (physPinToGpio (physPin) == -1)
+-      printf (" |    ") ;
+-    else
+-      printf (" | %-3d", physPinToGpio (physPin)) ;
+-  }
+-  else if (wpMode != WPI_MODE_PHYS)
+-  {
+-    if (physToWpi     [physPin] == -1)
+-      printf (" |    ") ;
+-    else
+-      printf (" | %-3d", physToWpi     [physPin]) ;
+-  }
++  if (physToWpi     [physPin] == -1)
++    printf (" |     |    ") ;
++  else
++    printf (" | %-3d | %-3d", physToWpi [physPin], physPinToGpio (physPin)) ;
+ 
+   printf (" |\n") ;
+ }
+ 
+ 
+-int cmReadall (void)
++void cmReadall (void)
+ {
+-  int model, rev, mem ;
+   int pin ;
+-  char *maker ;
+-
+-  piBoardId (&model, &rev, &mem, &maker) ;
+-  if (model != PI_MODEL_CM)
+-    return FALSE ;
+ 
+   printf ("+-----+------+-------+      +-----+------+-------+\n") ;
+   printf ("| Pin | Mode | Value |      | Pin | Mode | Value |\n") ;
+@@ -273,93 +236,71 @@ int cmReadall (void)
+   }
+ 
+   printf ("+-----+------+-------+      +-----+------+-------+\n") ;
+-
+-  return TRUE ;
+ }
+ 
+ 
+ /*
+- * bPlusReadall:
+- *	Read all the pins on the model B+
++ * abReadall:
++ *	Read all the pins on the model A or B.
+  *********************************************************************************
+  */
+ 
+-int bPlusReadall (void)
++void abReadall (int model, int rev)
+ {
+-  int model, rev, mem ;
+   int pin ;
+-  char *maker ;
+-  char *name ;
+-
+-  piBoardId (&model, &rev, &mem, &maker) ;
+-  if (model != PI_MODEL_BPLUS)
+-    return FALSE ;
++  char *type ;
+ 
+-  /**/ if (wpMode == WPI_MODE_GPIO)
+-    name = "BCM" ;
++  if (model == PI_MODEL_A)
++    type = " A" ;
+   else
+-    name = "wPi" ;
++    if (rev == PI_VERSION_2)
++      type = "B2" ;
++    else
++      type = "B1" ;
+ 
+-  printf (" +-----+---------+------+----+--B Plus--+----+------+---------+-----+\n") ;
+-  printf (" | %s |   Name  | Mode | Val| Physical |Val | Mode | Name    | %s |\n", name, name) ;
+-  printf (" +-----+---------+------+----+----++----+----+------+---------+-----+\n") ;
+-  for (pin = 1 ; pin <= 40 ; pin += 2)
++  printf (" +-----+-----+---------+------+---+-Model %s-+---+------+---------+-----+-----+\n", type) ;
++  printf (" | BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |\n") ;
++  printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
++  for (pin = 1 ; pin <= 26 ; pin += 2)
+     readallPhys (pin) ;
+-  printf (" +-----+---------+------+----+----++----+----+------+---------+-----+\n") ;
+ 
+-  return TRUE ;
++  if (rev == PI_VERSION_2) // B version 2
++  {
++    printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
++    for (pin = 51 ; pin <= 54 ; pin += 2)
++      readallPhys (pin) ;
++  }
++
++  printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
++  printf (" | BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |\n") ;
++  printf (" +-----+-----+---------+------+---+-Model %s-+---+------+---------+-----+-----+\n", type) ;
+ }
+ 
+ 
+-void doReadall (void)
++/*
++ * bPlusReadall:
++ *	Read all the pins on the model B+
++ *********************************************************************************
++ */
++
++void bPlusReadall (void)
+ {
+   int pin ;
+ 
+-  if (wiringPiNodes != NULL)	// External readall
+-  {
+-    doReadallExternal () ;
+-    return ;
+-  }
+-
+-  if (cmReadall ())
+-    return ;
+-
+-  if (bPlusReadall ())
+-    return ;
+-
+-  /**/ if (wpMode == WPI_MODE_GPIO)
+-  {
+-    printf (" +-----+-------+------+----+-Rev%d-----+----+------+-------+-----+\n", piBoardRev ()) ;
+-    printf (" | BCM |  Name | Mode | Val| Physical |Val | Mode | Name  | BCM |\n") ;
+-    printf (" +-----+-------+------+----+----++----+----+------+-------+-----+\n") ;
+-    for (pin = 1 ; pin <= 26 ; pin += 2)
+-      readallPhys (pin) ;
+-    printf (" +-----+-------+------+----+----++----+----+------+-------+-----+\n") ;
+-  }
+-  else if (wpMode == WPI_MODE_PHYS)
+-  {
+-    printf (" +-------+------+----+-Rev%d-----+----+------+-------+\n", piBoardRev ()) ;
+-    printf (" |  Name | Mode | Val| Physical |Val | Mode | Name  |\n") ;
+-    printf (" +-------+------+----+----++----+----+------+-------+\n") ;
+-    for (pin = 1 ; pin <= 26 ; pin += 2)
+-      readallPhys (pin) ;
+-    printf (" +-------+------+----+----++----+----+------+-------+\n") ;
+-  }
+-  else	// wiringPi
+-  {
+-    printf (" +-----+-------+------+----+-Rev%d-----+----+------+-------+-----+\n", piBoardRev ()) ;
+-    printf (" | wPi |  Name | Mode | Val| Physical |Val | Mode | Name  | wPi |\n") ;
+-    printf (" +-----+-------+------+----+----++----+----+------+-------+-----+\n") ;
+-    for (pin = 1 ; pin <= 26 ; pin += 2)
+-      readallPhys (pin) ;
+-    printf (" +-----+-------+------+----+----++----+----+------+-------+-----+\n") ;
+-  }
++  printf (" +-----+-----+---------+------+---+--B Plus--+---+------+---------+-----+-----+\n") ;
++  printf (" | BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |\n") ;
++  printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
++  for (pin = 1 ; pin <= 40 ; pin += 2)
++    readallPhys (pin) ;
++  printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
++  printf (" | BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |\n") ;
++  printf (" +-----+-----+---------+------+---+--B Plus--+---+------+---------+-----+-----+\n") ;
+ }
+ 
+ 
+-void doReadallOld (void)
++void doReadall (void)
+ {
+-  int pin ;
++  int model, rev, mem, maker, overVolted ;
+ 
+   if (wiringPiNodes != NULL)	// External readall
+   {
+@@ -367,27 +308,14 @@ void doReadallOld (void)
+     return ;
+   }
+ 
+-  if (cmReadall ())
+-    return ;
+-
+-  if (bPlusReadall ())
+-    return ;
+-
+-  printf ("+----------+-Rev%d-+------+--------+------+-------+\n", piBoardRev ()) ;
+-  printf ("| wiringPi | GPIO | Phys | Name   | Mode | Value |\n") ;
+-  printf ("+----------+------+------+--------+------+-------+\n") ;
++  piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
+ 
+-  for (pin = 0 ; pin < 64 ; ++pin)	// Crude, but effective
+-  {
+-    if (wpiPinToGpio (pin) == -1)
+-      continue ;
+-
+-    printf ("| %6d   | %3d  | %3d  | %s | %-4s | %-4s  |\n",
+-	pin, wpiPinToGpio (pin), wpiToPhys [pin],
+-	pinNames [pin], 
+-	alts [getAlt (pin)], 
+-	digitalRead (pin) == HIGH ? "High" : "Low ") ;
+-  }
+-
+-  printf ("+----------+------+------+--------+------+-------+\n") ;
++  /**/ if ((model == PI_MODEL_A) || (model == PI_MODEL_B))
++    abReadall (model, rev) ;
++  else if (model == PI_MODEL_BP)
++    bPlusReadall () ;
++  else if (model == PI_MODEL_CM)
++    cmReadall () ;
++  else
++    printf ("Oops - unable to determine board type... model: %d\n", model) ;
+ }
+diff --git a/wiringPi/Makefile b/wiringPi/Makefile
+index 619a3dc..78d3612 100644
+--- a/wiringPi/Makefile
++++ b/wiringPi/Makefile
+@@ -166,7 +166,7 @@ depend:
+ 
+ # DO NOT DELETE
+ 
+-wiringPi.o: wiringPi.h
++wiringPi.o: softPwm.h softTone.h wiringPi.h
+ wiringSerial.o: wiringSerial.h
+ wiringShift.o: wiringPi.h wiringShift.h
+ piHiPri.o: wiringPi.h
+@@ -190,5 +190,5 @@ mcp3422.o: wiringPi.h wiringPiI2C.h mcp3422.h
+ max31855.o: wiringPi.h wiringPiSPI.h max31855.h
+ max5322.o: wiringPi.h wiringPiSPI.h max5322.h
+ sn3218.o: wiringPi.h wiringPiI2C.h sn3218.h
+-drc.o: wiringPi.h wiringSerial.h drc.h
++drcSerial.o: wiringPi.h wiringSerial.h drcSerial.h
+ pca9685.o: wiringPi.h pca9685.h pca9685reg.h
+diff --git a/wiringPi/wiringPi.c b/wiringPi/wiringPi.c
+index 1e1cfe4..e7ae386 100644
+--- a/wiringPi/wiringPi.c
++++ b/wiringPi/wiringPi.c
+@@ -197,6 +197,39 @@ static volatile uint32_t *timer ;
+ static volatile uint32_t *timerIrqRaw ;
+ #endif
+ 
++
++// Data for use with the boardId functions.
++//	The order of entries here to correspond with the PI_MODEL_X
++//	and PI_VERSION_X defines in wiringPi.h
++//	Only intended for the gpio command - use at your own risk!
++
++const char *piModelNames [5] =
++{
++  "Unknown",
++  "Model A",
++  "Model B",
++  "Model B+",
++  "Compute Module",
++} ;
++
++const char *piRevisionNames [5] =
++{
++  "Unknown",
++  "1",
++  "1.1",
++  "1.2",
++  "2",
++} ;
++
++const char *piMakerNames [4] =
++{
++  "Unknown",
++  "Egoman",
++  "Sony",
++  "Qusda",
++} ;
++
++
+ // Time for easy calculations
+ 
+ static uint64_t epochMilli, epochMicro ;
+@@ -334,10 +367,17 @@ static int physToGpioR2 [64] =
+ 
+ // the P5 connector on the Rev 2 boards:
+ 
+-                           -1, -1, -1, -1, -1, -1, -1,			// ... 47
+-  -1, -1, -1, -1, -1,							// ... 52
+-  28, 29, 30, 31,							// ... 53, 54, 55, 56 - P5
+-  -1, -1, -1, -1, -1, -1, -1,						// ... 63
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  28, 29,
++  30, 31,
++  -1, -1,
++  -1, -1,
++  -1, -1,
++  -1, -1,
+ } ;
+ 
+ // gpioToGPFSEL:
+@@ -559,26 +599,27 @@ int wiringPiFailure (int fatal, const char *message, ...)
+ /*
+  * piBoardRev:
+  *	Return a number representing the hardware revision of the board.
+- *	Revision is currently 1 or 2.
+  *
+- *	Much confusion here )-:
++ *	Revision 1 really means the early Model B's.
++ *	Revision 2 is everything else - it covers the B, B+ and CM.
++ *
+  *	Seems there are some boards with 0000 in them (mistake in manufacture)
+  *	So the distinction between boards that I can see is:
+  *	0000 - Error
+- *	0001 - Not used (Compute - default to Rev 2)
+- *	0002 - Model B, Rev 1, 256MB
+- *	0003 - Model B, Rev 1.1, 256MB, Fuses/D14 removed.
+- *	0004 - Model B, Rev 2, 256MB, Sony
+- *	0005 - Model B, Rev 2, 256MB, Qisda
+- *	0006 - Model B, Rev 2, 256MB, Egoman
+- *	0007 - Model A, Rev 2, 256MB, Egoman
+- *	0008 - Model A, Rev 2, 256MB, Sony
+- *	0009 - Model A, Rev 2, 256MB, Qisda
+- *	000d - Model B, Rev 2, 512MB, Egoman
+- *	000e - Model B, Rev 2, 512MB, Sony
+- *	000f - Model B, Rev 2, 512MB, Qisda
+- *	0010 - Model B+        512MB, Sony
+- *	0011 - Pi compute Module
++ *	0001 - Not used 
++ *	0002 - Model B,  Rev 1,   256MB, Egoman
++ *	0003 - Model B,  Rev 1.1, 256MB, Egoman, Fuses/D14 removed.
++ *	0004 - Model B,  Rev 2,   256MB, Sony
++ *	0005 - Model B,  Rev 2,   256MB, Qisda
++ *	0006 - Model B,  Rev 2,   256MB, Egoman
++ *	0007 - Model A,  Rev 2,   256MB, Egoman
++ *	0008 - Model A,  Rev 2,   256MB, Sony
++ *	0009 - Model A,  Rev 2,   256MB, Qisda
++ *	000d - Model B,  Rev 2,   512MB, Egoman
++ *	000e - Model B,  Rev 2,   512MB, Sony
++ *	000f - Model B,  Rev 2,   512MB, Qisda
++ *	0010 - Model B+, Rev 1.2, 512MB, Sony
++ *	0011 - Pi CM,    Rev 1.2, 512MB, Sony
+  *
+  *	A small thorn is the olde style overvolting - that will add in
+  *		1000000
+@@ -604,7 +645,7 @@ int piBoardRev (void)
+ {
+   FILE *cpuFd ;
+   char line [120] ;
+-  char *c, lastChar ;
++  char *c ;
+   static int  boardRev = -1 ;
+ 
+   if (boardRev != -1)	// No point checking twice
+@@ -622,12 +663,16 @@ int piBoardRev (void)
+   if (strncmp (line, "Revision", 8) != 0)
+     piBoardRevOops ("No \"Revision\" line") ;
+ 
++// Chomp trailing CR/NL
++
+   for (c = &line [strlen (line) - 1] ; (*c == '\n') || (*c == '\r') ; --c)
+     *c = 0 ;
+   
+   if (wiringPiDebug)
+     printf ("piboardRev: Revision string: %s\n", line) ;
+ 
++// Scan to first digit
++
+   for (c = line ; *c ; ++c)
+     if (isdigit (*c))
+       break ;
+@@ -635,6 +680,11 @@ int piBoardRev (void)
+   if (!isdigit (*c))
+     piBoardRevOops ("No numeric revision string") ;
+ 
++// Make sure its long enough
++
++  if (strlen (c) < 4)
++    piBoardRevOops ("Bogus \"Revision\" line (too small)") ;
++  
+ // If you have overvolted the Pi, then it appears that the revision
+ //	has 100000 added to it!
+ 
+@@ -642,12 +692,14 @@ int piBoardRev (void)
+     if (strlen (c) != 4)
+       printf ("piboardRev: This Pi has/is overvolted!\n") ;
+ 
+-  lastChar = line [strlen (line) - 1] ;
++// Isolate  last 4 characters:
++
++  c = c + strlen (c) - 4 ;
+ 
+   if (wiringPiDebug)
+-    printf ("piboardRev: lastChar is: '%c' (%d, 0x%02X)\n", lastChar, lastChar, lastChar) ;
++    printf ("piboardRev: last4Chars are: \"%s\"\n", c) ;
+ 
+-  /**/ if ((lastChar == '2') || (lastChar == '3'))
++  if ( (strcmp (c, "0002") == 0) || (strcmp (c, "0003") == 0))
+     boardRev = 1 ;
+   else
+     boardRev = 2 ;
+@@ -663,32 +715,18 @@ int piBoardRev (void)
+  * piBoardId:
+  *	Do more digging into the board revision string as above, but return
+  *	as much details as we can.
++ *	This is undocumented and really only intended for the GPIO command.
++ *	Use at your own risk!
+  *********************************************************************************
+  */
+ 
+-const char *piModelNames [] =
+-{
+-  "Model A",
+-  "Model B",
+-  "Model B+",
+-  "Compute Module",
+-} ;
+-
+-const char *piRevisionNames[] =
+-{
+-  "1",
+-  "1.1",
+-  "2",
+-  "1.2",
+-} ;
+-
+-void piBoardId (int *model, int *rev, int *mem, char **maker)
++void piBoardId (int *model, int *rev, int *mem, int *maker, int *overVolted)
+ {
+   FILE *cpuFd ;
+   char line [120] ;
+   char *c ;
+ 
+-  piBoardRev () ;	// Call this first to make sure all's OK. Don't care about the result.
++  (void)piBoardRev () ;	// Call this first to make sure all's OK. Don't care about the result.
+ 
+   if ((cpuFd = fopen ("/proc/cpuinfo", "r")) == NULL)
+     piBoardRevOops ("Unable to open /proc/cpuinfo") ;
+@@ -720,6 +758,10 @@ void piBoardId (int *model, int *rev, int *mem, char **maker)
+ 
+   if (strlen (c) < 4)
+     piBoardRevOops ("Bogus \"Revision\" line") ;
++
++// If longer than 4, we'll assume it's been overvolted
++
++  *overVolted = strlen (c) > 4 ;
+   
+ // Extract last 4 characters:
+ 
+@@ -727,20 +769,20 @@ void piBoardId (int *model, int *rev, int *mem, char **maker)
+ 
+ // Fill out the replys as appropriate
+ 
+-  /**/ if (strcmp (c, "0002") == 0) { *model = 1 ; *rev = 0 ; *mem = 256 ; *maker = "China"  ; }
+-  else if (strcmp (c, "0003") == 0) { *model = 1 ; *rev = 1 ; *mem = 256 ; *maker = "China"  ; }
+-  else if (strcmp (c, "0004") == 0) { *model = 1 ; *rev = 2 ; *mem = 256 ; *maker = "Sony"   ; }
+-  else if (strcmp (c, "0005") == 0) { *model = 1 ; *rev = 2 ; *mem = 256 ; *maker = "Qisda"  ; }
+-  else if (strcmp (c, "0006") == 0) { *model = 1 ; *rev = 2 ; *mem = 256 ; *maker = "Egoman" ; }
+-  else if (strcmp (c, "0007") == 0) { *model = 0 ; *rev = 2 ; *mem = 256 ; *maker = "Egoman" ; }
+-  else if (strcmp (c, "0008") == 0) { *model = 0 ; *rev = 2 ; *mem = 256 ; *maker = "Sony"   ; }
+-  else if (strcmp (c, "0009") == 0) { *model = 1 ; *rev = 2 ; *mem = 256 ; *maker = "Qisda"  ; }
+-  else if (strcmp (c, "000d") == 0) { *model = 1 ; *rev = 2 ; *mem = 512 ; *maker = "Egoman" ; }
+-  else if (strcmp (c, "000e") == 0) { *model = 1 ; *rev = 2 ; *mem = 512 ; *maker = "Sony"   ; }
+-  else if (strcmp (c, "000f") == 0) { *model = 1 ; *rev = 2 ; *mem = 512 ; *maker = "Egoman" ; }
+-  else if (strcmp (c, "0010") == 0) { *model = 2 ; *rev = 3 ; *mem = 512 ; *maker = "Sony"   ; }
+-  else if (strcmp (c, "0011") == 0) { *model = 3 ; *rev = 1 ; *mem = 512 ; *maker = "Sony"   ; }
+-  else                              { *model = 0 ; *rev = 0 ; *mem =   0 ; *maker = "Unkn"   ; }
++  /**/ if (strcmp (c, "0002") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_1   ; *mem = 256 ; *maker = PI_MAKER_EGOMAN ; }
++  else if (strcmp (c, "0003") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_1_1 ; *mem = 256 ; *maker = PI_MAKER_EGOMAN ; }
++  else if (strcmp (c, "0004") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_SONY   ; }
++  else if (strcmp (c, "0005") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_QISDA  ; }
++  else if (strcmp (c, "0006") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_EGOMAN ; }
++  else if (strcmp (c, "0007") == 0) { *model = PI_MODEL_A  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_EGOMAN ; }
++  else if (strcmp (c, "0008") == 0) { *model = PI_MODEL_A  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_SONY ; ; }
++  else if (strcmp (c, "0009") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_QISDA  ; }
++  else if (strcmp (c, "000d") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 512 ; *maker = PI_MAKER_EGOMAN ; }
++  else if (strcmp (c, "000e") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
++  else if (strcmp (c, "000f") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 512 ; *maker = PI_MAKER_EGOMAN ; }
++  else if (strcmp (c, "0010") == 0) { *model = PI_MODEL_BP ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
++  else if (strcmp (c, "0011") == 0) { *model = PI_MODEL_CM ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
++  else                              { *model = 0           ; *rev = 0              ; *mem =   0 ; *maker = 0 ;               }
+ }
+  
+ 
+@@ -1698,8 +1740,7 @@ int wiringPiSetup (void)
+ {
+   int   fd ;
+   int   boardRev ;
+-  int   model, rev, mem ;
+-  char *maker ;
++  int   model, rev, mem, maker, overVolted ;
+ 
+   if (getenv (ENV_DEBUG) != NULL)
+     wiringPiDebug = TRUE ;
+@@ -1775,7 +1816,7 @@ int wiringPiSetup (void)
+ 
+ // If we're running on a compute module, then wiringPi pin numbers don't really many anything...
+ 
+-  piBoardId (&model, &rev, &mem, &maker) ;
++  piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
+   if (model == PI_MODEL_CM)
+     wiringPiMode = WPI_MODE_GPIO ;
+   else
+diff --git a/wiringPi/wiringPi.h b/wiringPi/wiringPi.h
+index 78ff87d..2bc63ba 100644
+--- a/wiringPi/wiringPi.h
++++ b/wiringPi/wiringPi.h
+@@ -67,13 +67,32 @@
+ #define	INT_EDGE_RISING		2
+ #define	INT_EDGE_BOTH		3
+ 
+-// Pi model types
++// Pi model types and version numbers
++//	Intended for the GPIO program Use at your own risk.
+ 
+-#define	PI_MODEL_A		0
+-#define	PI_MODEL_B		1
+-#define	PI_MODEL_BPLUS		2
+-#define	PI_MODEL_CM		3
++#define	PI_MODEL_UNKNOWN	0
++#define	PI_MODEL_A		1
++#define	PI_MODEL_B		2
++#define	PI_MODEL_BP		3
++#define	PI_MODEL_CM		4
+ 
++#define	PI_VERSION_UNKNOWN	0
++#define	PI_VERSION_1		1
++#define	PI_VERSION_1_1		2
++#define	PI_VERSION_1_2		3
++#define	PI_VERSION_2		4
++
++#define	PI_MAKER_UNKNOWN	0
++#define	PI_MAKER_EGOMAN		1
++#define	PI_MAKER_SONY		2
++#define	PI_MAKER_QISDA		3
++
++extern const char *piModelNames    [5] ;
++extern const char *piRevisionNames [5] ;
++extern const char *piMakerNames    [4] ;
++
++
++//	Intended for the GPIO program Use at your own risk.
+ 
+ // Threads
+ 
+@@ -128,8 +147,8 @@ extern "C" {
+ 
+ // Data
+ 
+-extern const char *piModelNames [] ;
+-extern const char *piRevisionNames[] ;
++//extern const char *piModelNames [] ;
++//extern const char *piRevisionNames[] ;
+ 
+ // Internal
+ 
+@@ -163,7 +182,7 @@ extern int  wiringPiSetupPiFaceForGpioProg (void) ;	// Don't use this - for gpio
+ // On-Board Raspberry Pi hardware specific stuff
+ 
+ extern int  piBoardRev          (void) ;
+-extern void piBoardId           (int *model, int *rev, int *mem, char **maker) ;
++extern void piBoardId           (int *model, int *rev, int *mem, int *maker, int *overVolted) ;
+ extern int  wpiPinToGpio        (int wpiPin) ;
+ extern int  physPinToGpio       (int physPin) ;
+ extern void setPadDrive         (int group, int value) ;
+-- 
+2.0.0.GIT
