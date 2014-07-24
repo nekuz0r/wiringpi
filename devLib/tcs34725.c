@@ -8,21 +8,17 @@ static int tcs34725_fds[TCS34725_MAX_TCS34725] = {0};
 static int tcs34725_count = 0;
 
 static unsigned char i2cReadReg8(int fd, unsigned char reg) {
-  wiringPiI2CWrite(fd, 0x80 | reg);
-  unsigned char data = wiringPiI2CRead(fd);
-  return data;
+  wiringPiI2CWrite(fd, 0x80 | (reg & 0x1F));
+  return wiringPiI2CReadReg8(fd, (reg & 0x1F));
 }
 
 static unsigned short i2cReadReg16(int fd, unsigned char reg) {
-  wiringPiI2CWrite(fd, 0x80 | reg);
-  unsigned short data = wiringPiI2CRead(fd);
-  data <<= 8;
-  data |= wiringPiI2CRead(fd);
-  return data;
+  wiringPiI2CWrite(fd, 0x80 | (reg & 0x1F));
+  return wiringPiI2CReadReg16(fd, (reg & 0x1F));
 }
 
 static void i2cWriteReg8(int fd, unsigned char reg, unsigned char value) {
-  wiringPiI2CWrite(fd, 0x80 | reg);
+  wiringPiI2CWrite(fd, 0x80 | (reg & 0x1F));
   wiringPiI2CWrite(fd, value);
 }
 
