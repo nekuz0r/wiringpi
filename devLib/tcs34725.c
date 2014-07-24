@@ -8,22 +8,22 @@ static int tcs34725_fds[TCS34725_MAX_TCS34725] = {0};
 static int tcs34725_count = 0;
 
 static unsigned char i2cReadReg8(int fd, unsigned char reg) {
-  ::wiringPiI2CWrite(fd, 0x80 | reg);
-  unsigned char data = ::wiringPiI2CRead8();
+  wiringPiI2CWrite(fd, 0x80 | reg);
+  unsigned char data = wiringPiI2CRead(fd);
   return data;
 }
 
 static unsigned short i2cReadReg16(int fd, unsigned char reg) {
-  ::wiringPiI2CWrite(fd, 0x80 | reg);
-  unsigned short data = ::wiringPiI2CRead8();
+  wiringPiI2CWrite(fd, 0x80 | reg);
+  unsigned short data = wiringPiI2CRead(fd);
   data <<= 8;
-  data |= ::wiringPiI2CRead8();
+  data |= wiringPiI2CRead(fd);
   return data;
 }
 
 static void i2cWriteReg8(int fd, unsigned char reg, unsigned char value) {
-  ::wiringPiI2CWrite(fd, 0x80 | reg);
-  ::wiringPiI2CWrite8(fd, value);
+  wiringPiI2CWrite(fd, 0x80 | reg);
+  wiringPiI2CWrite(fd, value);
 }
 
 void tcs34725ReadRGBC(int id, unsigned short *r, unsigned short *g, unsigned short *b, unsigned short *c)
@@ -75,7 +75,7 @@ void tcs34725ClearInterrupt(int id)
 {
   int fd = tcs34725_fds[id];
   
-  i2cWrite(fd, TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT | TCS34725_COMMAND_SPECIAL_FUNCTION);
+  ::wiringPiI2CWrite(fd, TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT | TCS34725_COMMAND_SPECIAL_FUNCTION);
 }
 
 void tcs34725SetInterruptLimits(int id, unsigned short low, unsigned short high)
@@ -112,7 +112,7 @@ int tcs34725Setup(const int i2cAddress, const int integrationTime, const int gai
   if (tcs34725_count == TCS34725_MAX_TCS34725)
     return -1;
   
-  if ((fd = i2cSetup(i2cAddress)) < 0)
+  if ((fd = wiringPiI2CSetup(i2cAddress)) < 0)
     return fd;
   
   tcs34725_fds[tcs34725_count] = fd;
