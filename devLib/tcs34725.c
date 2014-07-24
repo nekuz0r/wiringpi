@@ -8,18 +8,15 @@ static int tcs34725_fds[TCS34725_MAX_TCS34725] = {0};
 static int tcs34725_count = 0;
 
 static unsigned char i2cReadReg8(int fd, unsigned char reg) {
-  wiringPiI2CWrite(fd, 0x80 | (reg & 0x1F));
-  return wiringPiI2CReadReg8(fd, (reg & 0x1F));
+  return wiringPiI2CReadReg8(fd, TCS34725_COMMAND_BIT | (reg & 0x1F));
 }
 
 static unsigned short i2cReadReg16(int fd, unsigned char reg) {
-  wiringPiI2CWrite(fd, 0x80 | (reg & 0x1F));
-  return wiringPiI2CReadReg16(fd, (reg & 0x1F));
+  return wiringPiI2CReadReg16(fd, TCS34725_COMMAND_BIT | (reg & 0x1F));
 }
 
 static void i2cWriteReg8(int fd, unsigned char reg, unsigned char value) {
-  wiringPiI2CWrite(fd, 0x80 | (reg & 0x1F));
-  wiringPiI2CWrite(fd, value);
+  wiringPiI2CWriteReg8(fd, TCS34725_COMMAND_BIT | (reg & 0x1F), value);
 }
 
 void tcs34725ReadRGBC(int id, unsigned short *r, unsigned short *g, unsigned short *b, unsigned short *c)
