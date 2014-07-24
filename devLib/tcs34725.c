@@ -75,7 +75,7 @@ void tcs34725ClearInterrupt(int id)
 {
   int fd = tcs34725_fds[id];
   
-  ::wiringPiI2CWrite(fd, TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT | TCS34725_COMMAND_SPECIAL_FUNCTION);
+  wiringPiI2CWrite(fd, TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT | TCS34725_COMMAND_SPECIAL_FUNCTION);
 }
 
 void tcs34725SetInterruptLimits(int id, unsigned short low, unsigned short high)
