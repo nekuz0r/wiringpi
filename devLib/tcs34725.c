@@ -7,14 +7,33 @@
 static int tcs34725_fds[TCS34725_MAX_TCS34725] = {0};
 static int tcs34725_count = 0;
 
+static unsigned char i2cReadReg8(int fd, unsigned char reg) {
+  ::wiringPiI2CWrite(fd, 0x80 | reg);
+  unsigned char data = ::wiringPiI2CRead8();
+  return data;
+}
+
+static unsigned short i2cReadReg16(int fd, unsigned char reg) {
+  ::wiringPiI2CWrite(fd, 0x80 | reg);
+  unsigned short data = ::wiringPiI2CRead8();
+  data <<= 8;
+  data |= ::wiringPiI2CRead8();
+  return data;
+}
+
+static void i2cWriteReg8(int fd, unsigned char reg, unsigned char value) {
+  ::wiringPiI2CWrite(fd, 0x80 | reg);
+  ::wiringPiI2CWrite8(fd, value);
+}
+
 void tcs34725ReadRGBC(int id, unsigned short *r, unsigned short *g, unsigned short *b, unsigned short *c)
 {
   int fd = tcs34725_fds[id];
   
-  *r = wiringPiI2CReadReg16(fd, TCS34725_RDATAL);
-  *g = wiringPiI2CReadReg16(fd, TCS34725_GDATAL);
-  *b = wiringPiI2CReadReg16(fd, TCS34725_BDATAL);
-  *c = wiringPiI2CReadReg16(fd, TCS34725_CDATAL);
+  *r = i2cReadReg16(fd, TCS34725_RDATAL);
+  *g = i2cReadReg16(fd, TCS34725_GDATAL);
+  *b = i2cReadReg16(fd, TCS34725_BDATAL);
+  *c = i2cReadReg16(fd, TCS34725_CDATAL);
 }
 
 // Formulas are from : TAOS Designer's notebook : Calculating Color Temperature and Illuminance using the TAOS TCS3414CS Digital Color Sensor
@@ -44,46 +63,46 @@ void tcs34725SetInterrupt(int id, int aien)
 {
   int fd = tcs34725_fds[id];
   
-  unsigned char enable = wiringPiI2CReadReg8(fd, TCS34725_ENABLE);
+  unsigned char enable = i2cReadReg8(fd, TCS34725_ENABLE);
   if (aien)
     enable |= TCS34725_ENABLE_AIEN;
   else
     enable &= ~TCS34725_ENABLE_AIEN;
-  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE, enable);
+  i2cWriteReg8(fd, TCS34725_ENABLE, enable);
 }
 
 void tcs34725ClearInterrupt(int id)
 {
   int fd = tcs34725_fds[id];
   
-  wiringPiI2CWrite(fd, TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT | TCS34725_COMMAND_SPECIAL_FUNCTION);
+  i2cWrite(fd, TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT | TCS34725_COMMAND_SPECIAL_FUNCTION);
 }
 
 void tcs34725SetInterruptLimits(int id, unsigned short low, unsigned short high)
 {
   int fd = tcs34725_fds[id];
   
-  wiringPiI2CWriteReg8(fd, TCS34725_AILTL, low & 0xFF);
-  wiringPiI2CWriteReg8(fd, TCS34725_AILTH, low >> 8);
-  wiringPiI2CWriteReg8(fd, TCS34725_AIHTL, high & 0xFF);
-  wiringPiI2CWriteReg8(fd, TCS34725_AIHTH, high >> 8);
+  i2cWriteReg8(fd, TCS34725_AILTL, low & 0xFF);
+  i2cWriteReg8(fd, TCS34725_AILTH, low >> 8);
+  i2cWriteReg8(fd, TCS34725_AIHTL, high & 0xFF);
+  i2cWriteReg8(fd, TCS34725_AIHTH, high >> 8);
 }
 
 void tcs34725Enable(int id)
 {
   int fd = tcs34725_fds[id];
   
-  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE, TCS34725_ENABLE_PON);
+  i2cWriteReg8(fd, TCS34725_ENABLE, TCS34725_ENABLE_PON);
   delay(3);
-  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE, TCS34725_ENABLE_PON | TCS34725_ENABLE_AEN);
+  i2cWriteReg8(fd, TCS34725_ENABLE, TCS34725_ENABLE_PON | TCS34725_ENABLE_AEN);
 }
 
 void tcs34725Disable(int id)
 {
   int fd = tcs34725_fds[id];
   
-  int enable = wiringPiI2CReadReg8(fd, TCS34725_ENABLE);
-  wiringPiI2CWriteReg8(fd, TCS34725_ENABLE, enable & ~(TCS34725_ENABLE_PON | TCS34725_ENABLE_AEN));
+  int enable = i2cReadReg8(fd, TCS34725_ENABLE);
+  i2cWriteReg8(fd, TCS34725_ENABLE, enable & ~(TCS34725_ENABLE_PON | TCS34725_ENABLE_AEN));
 }
 
 int tcs34725Setup(const int i2cAddress, const int integrationTime, const int gain)
@@ -93,17 +112,17 @@ int tcs34725Setup(const int i2cAddress, const int integrationTime, const int gai
   if (tcs34725_count == TCS34725_MAX_TCS34725)
     return -1;
   
-  if ((fd = wiringPiI2CSetup(i2cAddress)) < 0)
+  if ((fd = i2cSetup(i2cAddress)) < 0)
     return fd;
   
   tcs34725_fds[tcs34725_count] = fd;
   
-  unsigned char id = wiringPiI2CReadReg8(fd, TCS34725_ID);
+  unsigned char id = i2cReadReg8(fd, TCS34725_ID);
   if (id != TCS34725_ID_VALUE)
     return -1;
     
-  wiringPiI2CWriteReg8(fd, TCS34725_ATIME, integrationTime & 0xFF); // Write Integration time into ATIME register
-  wiringPiI2CWriteReg8(fd, TCS34725_CONTROL, gain & 0x03); // Write gain into CONTROL register
+  i2cWriteReg8(fd, TCS34725_ATIME, integrationTime & 0xFF); // Write Integration time into ATIME register
+  i2cWriteReg8(fd, TCS34725_CONTROL, gain & 0x03); // Write gain into CONTROL register
   
   return tcs34725_count++;
 }
