@@ -29,6 +29,38 @@ void tcs34725ReadRGBC(int id, unsigned short *r, unsigned short *g, unsigned sho
   *c = i2cReadReg16(fd, TCS34725_CDATAL);
 }
 
+void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned short *v)
+{
+  unsigned short r, g, b, c;
+  float rp, gp, bp, min, max, delta;
+  
+  ::tcs34725ReadRGBC(id, &r, &g, &b, &c);
+  
+  rp = r / 65535.0f;
+  gp = g / 65535.0f;
+  bp = b / 65535.0f;
+  
+  min = MIN(MIN(rp, gp), bp);
+  max = MAX(MAX(rp, gp), bp);
+  delta = max - min;
+  
+  if (max == rp) {
+    *h = (unsigned short)(60 * ((gp - rp) / delta) + 360) % 360;
+  }
+  else if (max == gp) {
+    *h = 60 * ((bp - rp) / delta) + 120;
+  }
+  else if (max == bp) {
+    *h = 60 * ((rp - gp) / delta) + 240;
+  }
+  
+  if (max != 0) {
+    *s = (1 - (min / max)) * 100;
+  }
+  
+  *v = max * 100;
+}
+
 // Formulas are from : TAOS Designer's notebook : Calculating Color Temperature and Illuminance using the TAOS TCS3414CS Digital Color Sensor
 unsigned short tcs34725GetCorrelatedColorTemperature(unsigned short r, unsigned short g, unsigned short b)
 {

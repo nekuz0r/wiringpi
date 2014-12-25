@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TCS34725_COMMAND_BIT 0x80
 #define TCS34725_COMMAND_CLEAR_CHANNEL_INTERRUPT 0x06
 #define TCS34725_COMMAND_SPECIAL_FUNCTION 0x60
@@ -70,11 +74,8 @@
 
 #define TCS34725_MAX_TCS34725  0x08
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 extern void           tcs34725ReadRGBC                      (int id, unsigned short *r, unsigned short *g, unsigned short *b, unsigned short *c);
+extern void           tcs34725ReadHSV                       (int id, unsigned short *h, unsigned short *s, unsigned short *v);
 extern unsigned short tcs34725GetCorrelatedColorTemperature (unsigned short r, unsigned short g, unsigned short b);
 extern unsigned short tcs34725GetIlluminance                (unsigned short r, unsigned short g, unsigned short b);
 
