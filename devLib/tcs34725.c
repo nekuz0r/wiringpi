@@ -4,6 +4,9 @@
 
 #include "tcs34725.h"
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
 static int tcs34725_fds[TCS34725_MAX_TCS34725] = {0};
 static int tcs34725_count = 0;
 
@@ -34,7 +37,7 @@ void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned shor
   unsigned short r, g, b, c;
   float rp, gp, bp, min, max, delta;
   
-  ::tcs34725ReadRGBC(id, &r, &g, &b, &c);
+  tcs34725ReadRGBC(id, &r, &g, &b, &c);
   
   rp = r / 65535.0f;
   gp = g / 65535.0f;
