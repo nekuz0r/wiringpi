@@ -51,7 +51,7 @@ void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned shor
   delta = max - min;
   
   if (max == rp) {
-    *h = (unsigned short)(60 * ((gp - rp) / delta) + 360.0f) % 360.0f;
+    *h = (unsigned short)(60 * ((gp - rp) / delta) + 360.0f) % 360;
   }
   else if (max == gp) {
     *h = 60.0f * ((bp - rp) / delta) + 120.0f;
