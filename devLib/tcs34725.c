@@ -35,23 +35,35 @@ void tcs34725ReadRGBC(int id, unsigned short *r, unsigned short *g, unsigned sho
 void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned short *v)
 {
   unsigned short r, g, b, c;
-  float rp, gp, bp, min, max, delta;
+  float rp, gp, bp, min, max, delta, maxValue;
+  
+  int fd = tcs34725_fds[id];
+  unsigned char atime = i2cReadReg8(fd, TCS34725_ATIME);
   
   tcs34725ReadRGBC(id, &r, &g, &b, &c);
   
   *h = 0;
   *s = 0;
   
-  rp = r / 65535.0f;
-  gp = g / 65535.0f;
-  bp = b / 65535.0f;
+  switch (atime) {
+    case TCS34725_ATIME_2_4MS: maxValue = 1024.0f; break;
+    case TCS34725_ATIME_24MS: maxValue = 10240.0f; break;
+    case TCS34725_ATIME_101MS: maxValue = 43008.0f; break;
+    case TCS34725_ATIME_154MS: maxValue = 65535.0f; break;
+    case TCS34725_ATIME_700MS: maxValue = 65535.0f; break;
+    default: maxValue = 65535.0f; break;
+  }
+  
+  rp = r / maxValue;
+  gp = g / maxValue;
+  bp = b / maxValue;
   
   min = MIN(MIN(rp, gp), bp);
   max = MAX(MAX(rp, gp), bp);
   delta = max - min;
   
   if (max == rp) {
-    *h = (unsigned short)(60 * ((gp - rp) / delta) + 360.0f) % 360;
+    *h = (unsigned short)(60.0f * ((gp - rp) / delta) + 360.0f) % 360;
   }
   else if (max == gp) {
     *h = 60.0f * ((bp - rp) / delta) + 120.0f;
