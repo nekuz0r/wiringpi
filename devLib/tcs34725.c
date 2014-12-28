@@ -36,7 +36,7 @@ void tcs34725ReadRGBC(int id, unsigned char *r, unsigned char *g, unsigned char 
 
 void tcs34725ReadHSV(int id, unsigned short *h, unsigned char *s, unsigned char *v)
 {
-  unsigned short r, g, b, c;
+  unsigned char r, g, b, c;
   tcs34725ReadRGBC(id, &r, &g, &b, &c);
   
   float rp = r / 255.0f;
