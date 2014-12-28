@@ -39,6 +39,9 @@ void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned shor
   
   tcs34725ReadRGBC(id, &r, &g, &b, &c);
   
+  *h = 0;
+  *s = 0;
+  
   rp = r / 65535.0f;
   gp = g / 65535.0f;
   bp = b / 65535.0f;
@@ -48,20 +51,20 @@ void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned shor
   delta = max - min;
   
   if (max == rp) {
-    *h = (unsigned short)(60 * ((gp - rp) / delta) + 360) % 360;
+    *h = (unsigned short)(60 * ((gp - rp) / delta) + 360.0f) % 360.0f;
   }
   else if (max == gp) {
-    *h = 60 * ((bp - rp) / delta) + 120;
+    *h = 60.0f * ((bp - rp) / delta) + 120.0f;
   }
   else if (max == bp) {
-    *h = 60 * ((rp - gp) / delta) + 240;
+    *h = 60.0f * ((rp - gp) / delta) + 240.0f;
   }
   
-  if (max != 0) {
-    *s = (1 - (min / max)) * 100;
+  if (max > 0.0f) {
+    *s = (1.0f - (min / max)) * 100.0f;
   }
   
-  *v = max * 100;
+  *v = max * 100.0f;
 }
 
 // Formulas are from : TAOS Designer's notebook : Calculating Color Temperature and Illuminance using the TAOS TCS3414CS Digital Color Sensor
