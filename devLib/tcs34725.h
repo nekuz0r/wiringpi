@@ -74,10 +74,10 @@ extern "C" {
 
 #define TCS34725_MAX_TCS34725  0x08
 
-extern void           tcs34725ReadRGBC                      (int id, unsigned short *r, unsigned short *g, unsigned short *b, unsigned short *c);
-extern void           tcs34725ReadHSV                       (int id, unsigned short *h, unsigned short *s, unsigned short *v);
-extern unsigned short tcs34725GetCorrelatedColorTemperature (unsigned short r, unsigned short g, unsigned short b);
-extern unsigned short tcs34725GetIlluminance                (unsigned short r, unsigned short g, unsigned short b);
+extern void           tcs34725ReadRGBC                      (int id, unsigned char *r, unsigned char *g, unsigned char *b, unsigned char *c);
+extern void           tcs34725ReadHSV                       (int id, unsigned short *h, unsigned char *s, unsigned char *v);
+extern unsigned short tcs34725GetCorrelatedColorTemperature (unsigned char r, unsigned char g, unsigned char b);
+extern unsigned short tcs34725GetIlluminance                (unsigned char r, unsigned char g, unsigned char b);
 
 extern void           tcs34725SetInterrupt                  (int id, int aien);
 extern void           tcs34725ClearInterrupt                (int id);

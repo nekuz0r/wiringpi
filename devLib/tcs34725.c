@@ -22,65 +22,47 @@ static void i2cWriteReg8(int fd, unsigned char reg, unsigned char value) {
   wiringPiI2CWriteReg8(fd, TCS34725_COMMAND_BIT | (reg & 0x1F), value);
 }
 
-void tcs34725ReadRGBC(int id, unsigned short *r, unsigned short *g, unsigned short *b, unsigned short *c)
+void tcs34725ReadRGBC(int id, unsigned char *r, unsigned char *g, unsigned char *b, unsigned char *c)
 {
-  int fd = tcs34725_fds[id];
-  
-  *r = i2cReadReg16(fd, TCS34725_RDATAL);
-  *g = i2cReadReg16(fd, TCS34725_GDATAL);
-  *b = i2cReadReg16(fd, TCS34725_BDATAL);
-  *c = i2cReadReg16(fd, TCS34725_CDATAL);
-}
-
-void tcs34725ReadHSV(int id, unsigned short *h, unsigned short *s, unsigned short *v)
-{
-  unsigned short r, g, b, c;
-  float rp, gp, bp, min, max, delta, maxValue;
-  
   int fd = tcs34725_fds[id];
   unsigned char atime = i2cReadReg8(fd, TCS34725_ATIME);
+  unsigned short maxCount = MIN(((256 - atime) * 1024), 65535);
   
+  *r = (unsigned char)(((float)i2cReadReg16(fd, TCS34725_RDATAL) / (float)maxCount) * 255.0f);
+  *g = (unsigned char)(((float)i2cReadReg16(fd, TCS34725_GDATAL) / (float)maxCount) * 255.0f);
+  *b = (unsigned char)(((float)i2cReadReg16(fd, TCS34725_BDATAL) / (float)maxCount) * 255.0f);
+  *c = (unsigned char)(((float)i2cReadReg16(fd, TCS34725_CDATAL) / (float)maxCount) * 255.0f);
+}
+
+void tcs34725ReadHSV(int id, unsigned short *h, unsigned char *s, unsigned char *v)
+{
+  unsigned short r, g, b, c;
   tcs34725ReadRGBC(id, &r, &g, &b, &c);
   
-  *h = 0;
-  *s = 0;
+  float rp = r / 255.0f;
+  float gp = g / 255.0f;
+  float bp = b / 255.0f;
   
-  switch (atime) {
-    case TCS34725_ATIME_2_4MS: maxValue = 1024.0f; break;
-    case TCS34725_ATIME_24MS: maxValue = 10240.0f; break;
-    case TCS34725_ATIME_101MS: maxValue = 43008.0f; break;
-    case TCS34725_ATIME_154MS: maxValue = 65535.0f; break;
-    case TCS34725_ATIME_700MS: maxValue = 65535.0f; break;
-    default: maxValue = 65535.0f; break;
-  }
+  float min = MIN(MIN(rp, gp), bp);
+  float max = MAX(MAX(rp, gp), bp);
+  float delta = max - min;
   
-  rp = r / maxValue;
-  gp = g / maxValue;
-  bp = b / maxValue;
+  // H [0,360]
+  if (max == rp)      *h = (unsigned short)(60.0f * ((gp - rp) / delta) + 360.0f) % 360;
+  else if (max == gp) *h = (unsigned short)(60.0f * ((bp - rp) / delta) + 120.0f);
+  else if (max == bp) *h = (unsigned short)(60.0f * ((rp - gp) / delta) + 240.0f);
+  else                *h = 0;
   
-  min = MIN(MIN(rp, gp), bp);
-  max = MAX(MAX(rp, gp), bp);
-  delta = max - min;
+  // S [0,100]
+  if (max > 0.0f) *s = (1.0f - (min / max)) * 100.0f;
+  else            *s = 0;
   
-  if (max == rp) {
-    *h = (unsigned short)(60.0f * ((gp - rp) / delta) + 360.0f) % 360;
-  }
-  else if (max == gp) {
-    *h = 60.0f * ((bp - rp) / delta) + 120.0f;
-  }
-  else if (max == bp) {
-    *h = 60.0f * ((rp - gp) / delta) + 240.0f;
-  }
-  
-  if (max > 0.0f) {
-    *s = (1.0f - (min / max)) * 100.0f;
-  }
-  
+  // V [0,100]
   *v = max * 100.0f;
 }
 
 // Formulas are from : TAOS Designer's notebook : Calculating Color Temperature and Illuminance using the TAOS TCS3414CS Digital Color Sensor
-unsigned short tcs34725GetCorrelatedColorTemperature(unsigned short r, unsigned short g, unsigned short b)
+unsigned short tcs34725GetCorrelatedColorTemperature(unsigned char r, unsigned char g, unsigned char b)
 {
   float x = (-0.14282f * r) + (1.54924f * g) + (-0.95641f * b);
   float y = (-0.32466f * r) + (1.57837f * g) + (-0.73191f * b);
@@ -96,7 +78,7 @@ unsigned short tcs34725GetCorrelatedColorTemperature(unsigned short r, unsigned 
   return (unsigned short)cct;
 }
 
-unsigned short tcs34725GetIlluminance(unsigned short r, unsigned short g, unsigned short b)
+unsigned short tcs34725GetIlluminance(unsigned char r, unsigned char g, unsigned char b)
 {
   float illuminance = (-0.32466f * r) + (1.57837f * g) + (-0.73191f * b);
   return (unsigned short)illuminance;
