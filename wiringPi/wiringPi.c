@@ -1628,9 +1628,10 @@ static void *interruptHandler (void *arg)
  *********************************************************************************
  */
 
+pthread_t threadIds [64];
 int wiringPiISR (int pin, int mode, void (*function)(void))
 {
-  pthread_t threadId ;
+  // pthread_t threadId ;
   const char *modeS ;
   char fName   [64] ;
   char  pinS [8] ;
@@ -1710,7 +1711,7 @@ int wiringPiISR (int pin, int mode, void (*function)(void))
 
   pthread_mutex_lock (&pinMutex) ;
     pinPass = pin ;
-    pthread_create (&threadId, NULL, interruptHandler, NULL) ;
+    pthread_create (&threadIds[pin], NULL, interruptHandler, NULL) ;
     while (pinPass != -1)
       delay (1) ;
   pthread_mutex_unlock (&pinMutex) ;
@@ -1718,6 +1719,9 @@ int wiringPiISR (int pin, int mode, void (*function)(void))
   return 0 ;
 }
 
+int wiringPiISRCancel(int pin) {
+  return pthread_cancel(threadIds[pin]);
+}
 
 /*
  * initialiseEpoch:
