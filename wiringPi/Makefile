@@ -57,7 +57,8 @@ SRC	=	wiringPi.c						\
 		sn3218.c						\
 		drcSerial.c	\
 		pca9685.c \
-		dac7678.c
+		dac7678.c \
+		wpiExtensions.c
 
 OBJ	=	$(SRC:.c=.o)
 
@@ -120,6 +121,7 @@ install-headers:
 	@install -m 0644 pca9685.h		$(DESTDIR)$(PREFIX)/include
 	@install -m 0644 pca9685reg.h	$(DESTDIR)$(PREFIX)/include
 	@install -m 0644 dac7678.h		$(DESTDIR)$(PREFIX)/include
+	@install -m 0644 wpiExtensions.h	$(DESTDIR)$(PREFIX)/include
 
 .PHONY:	install
 install:	$(DYNAMIC) install-headers
@@ -164,6 +166,7 @@ uninstall:
 	@rm -f $(DESTDIR)$(PREFIX)/include/pca9685.h
 	@rm -f $(DESTDIR)$(PREFIX)/include/pca9685reg.h
 	@rm -f $(DESTDIR)$(PREFIX)/include/dac7678.h
+	@rm -f $(DESTDIR)$(PREFIX)/includewpiExtensions.h
 	@rm -f $(DESTDIR)$(PREFIX)/lib/libwiringPi.*
 	@ldconfig
 
@@ -201,3 +204,7 @@ sn3218.o: wiringPi.h wiringPiI2C.h sn3218.h
 drcSerial.o: wiringPi.h wiringSerial.h drcSerial.h
 pca9685.o: wiringPi.h pca9685.h pca9685reg.h
 dac7678.o: wiringPi.h wiringPiI2C.h dac7678.h
+wpiExtensions.o: wiringPi.h mcp23008.h mcp23016.h mcp23017.h mcp23s08.h
+wpiExtensions.o: mcp23s17.h sr595.h pcf8591.h pcf8574.h max31855.h max5322.h
+wpiExtensions.o: mcp3002.h mcp3004.h mcp4802.h mcp3422.h sn3218.h drcSerial.h
+wpiExtensions.o: wpiExtensions.h
