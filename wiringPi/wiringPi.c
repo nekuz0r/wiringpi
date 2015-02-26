@@ -203,13 +203,14 @@ static volatile uint32_t *timerIrqRaw ;
 //	and PI_VERSION_X defines in wiringPi.h
 //	Only intended for the gpio command - use at your own risk!
 
-const char *piModelNames [5] =
+const char *piModelNames [6] =
 {
   "Unknown",
   "Model A",
   "Model B",
   "Model B+",
   "Compute Module",
+  "Model A+",
 } ;
 
 const char *piRevisionNames [5] =
@@ -221,12 +222,13 @@ const char *piRevisionNames [5] =
   "2",
 } ;
 
-const char *piMakerNames [4] =
+const char *piMakerNames [5] =
 {
   "Unknown",
   "Egoman",
   "Sony",
   "Qusda",
+  "MBest",
 } ;
 
 
@@ -620,6 +622,7 @@ int wiringPiFailure (int fatal, const char *message, ...)
  *	000f - Model B,  Rev 2,   512MB, Qisda
  *	0010 - Model B+, Rev 1.2, 512MB, Sony
  *	0011 - Pi CM,    Rev 1.2, 512MB, Sony
+ *	0012 - Model A+  Rev 1.2, 256MB, Sony
  *
  *	A small thorn is the olde style overvolting - that will add in
  *		1000000
@@ -687,10 +690,12 @@ int piBoardRev (void)
   
 // If you have overvolted the Pi, then it appears that the revision
 //	has 100000 added to it!
+// The actual condition for it being set is:
+//	 (force_turbo || current_limit_override || temp_limit>85) && over_voltage>0
 
   if (wiringPiDebug)
     if (strlen (c) != 4)
-      printf ("piboardRev: This Pi has/is overvolted!\n") ;
+      printf ("piboardRev: This Pi has/is (force_turbo || current_limit_override || temp_limit>85) && over_voltage>0\n") ;
 
 // Isolate  last 4 characters:
 
@@ -782,6 +787,8 @@ void piBoardId (int *model, int *rev, int *mem, int *maker, int *overVolted)
   else if (strcmp (c, "000f") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 512 ; *maker = PI_MAKER_EGOMAN ; }
   else if (strcmp (c, "0010") == 0) { *model = PI_MODEL_BP ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
   else if (strcmp (c, "0011") == 0) { *model = PI_MODEL_CM ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
+  else if (strcmp (c, "0012") == 0) { *model = PI_MODEL_AP ; *rev = PI_VERSION_1_2 ; *mem = 256 ; *maker = PI_MAKER_SONY   ; }
+  else if (strcmp (c, "0013") == 0) { *model = PI_MODEL_BP ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_MBEST  ; }
   else                              { *model = 0           ; *rev = 0              ; *mem =   0 ; *maker = 0 ;               }
 }
  
@@ -1510,8 +1517,10 @@ int waitForInterrupt (int pin, int mS)
 
 // Do a dummy read to clear the interrupt
 //	A one character read appars to be enough.
+//	Followed by a seek to reset it.
 
   (void)read (fd, &c, 1) ;
+  lseek (fd, 0, SEEK_SET) ;
 
   return x ;
 }
