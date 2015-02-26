@@ -1,0 +1,51 @@
+From 51fff3cab9d45a4775eb0fb1f5de23eb2e2b2328 Mon Sep 17 00:00:00 2001
+From: Gordon Henderson <projects@drogon.net>
+Date: Thu, 29 Jan 2015 10:17:25 +0000
+Subject: [PATCH] Updated a technicality in softPwm, and added a suggested
+ memset to zero for the SPI code - it's mentioned in spidev.h but not used in
+ the actual kernel documentation example spi_test.c program )-:
+
+---
+ wiringPi/softPwm.c     | 9 ++++-----
+ wiringPi/wiringPiSPI.c | 5 +++++
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/wiringPi/softPwm.c b/wiringPi/softPwm.c
+index 3c79ba7..98b408f 100644
+--- a/wiringPi/softPwm.c
++++ b/wiringPi/softPwm.c
+@@ -51,11 +51,10 @@
+ 
+ #define	PULSE_TIME	100
+ 
+-static int marks         [MAX_PINS] ;
+-static int range         [MAX_PINS] ;
+-static pthread_t threads [MAX_PINS] ;
+-
+-int newPin = -1 ;
++static volatile int marks         [MAX_PINS] ;
++static volatile int range         [MAX_PINS] ;
++static volatile pthread_t threads [MAX_PINS] ;
++static volatile int newPin = -1 ;
+ 
+ 
+ /*
+diff --git a/wiringPi/wiringPiSPI.c b/wiringPi/wiringPiSPI.c
+index 215a027..002ee01 100644
+--- a/wiringPi/wiringPiSPI.c
++++ b/wiringPi/wiringPiSPI.c
+@@ -75,6 +75,11 @@ int wiringPiSPIDataRW (int channel, unsigned char *data, int len)
+ 
+   channel &= 1 ;
+ 
++// Mentioned in spidev.h but not used in the original kernel documentation
++//	test program )-:
++
++  memset (&spi, 0, sizeof (spi)) ;
++
+   spi.tx_buf        = (unsigned long)data ;
+   spi.rx_buf        = (unsigned long)data ;
+   spi.len           = len ;
+-- 
+2.0.0.GIT
+

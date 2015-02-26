@@ -1,0 +1,595 @@
+From 0a9fdeb29d31609ef834f050bdb8a7a65cd35e2b Mon Sep 17 00:00:00 2001
+From: Gordon Henderson <projects@drogon.net>
+Date: Mon, 10 Nov 2014 10:55:23 +0000
+Subject: [PATCH 1/1] Minor changes to the PiGlow code - got the orange &
+ yellow the right way round at last..
+
+Updated for the 0x0012 board revision on the new A+
+---
+ devLib/Makefile     |  14 +++----
+ devLib/piGlow.h     |   4 +-
+ examples/Makefile   |   1 +
+ examples/lowPower.c |  68 ++++++++++++++++++++++++++++++
+ examples/spiSpeed.c | 118 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ gpio/gpio.c         |  47 +++++++++++++++------
+ gpio/readall.c      |  22 ++++++----
+ pins/Makefile       |   2 +-
+ wiringPi/Makefile   |  14 +++----
+ wiringPi/wiringPi.c |  11 ++++-
+ wiringPi/wiringPi.h |   3 +-
+ 11 files changed, 264 insertions(+), 40 deletions(-)
+ create mode 100644 examples/lowPower.c
+ create mode 100644 examples/spiSpeed.c
+
+diff --git a/devLib/Makefile b/devLib/Makefile
+index a3c0d42..4ba1774 100644
+--- a/devLib/Makefile
++++ b/devLib/Makefile
+@@ -65,18 +65,18 @@ $(DYNAMIC):	$(OBJ)
+ 	@echo [Compile] $<
+ 	@$(CC) -c $(CFLAGS) $< -o $@
+ 
+-.PHONEY:	clean
++.PHONY:	clean
+ clean:
+ 	@echo "[Clean]"
+ 	@rm -f $(OBJ) $(OBJ_I2C) *~ core tags Makefile.bak libwiringPiDev.*
+ 
+-.PHONEY:	tags
++.PHONY:	tags
+ tags:	$(SRC)
+ 	@echo [ctags]
+ 	@ctags $(SRC)
+ 
+ 
+-.PHONEY:	install-headers
++.PHONY:	install-headers
+ install-headers:
+ 	@echo "[Install Headers]"
+ 	@install -m 0755 -d			$(DESTDIR)$(PREFIX)/include
+@@ -89,7 +89,7 @@ install-headers:
+ 	@install -m 0644 lcd.h			$(DESTDIR)$(PREFIX)/include
+ 	@install -m 0644 piGlow.h		$(DESTDIR)$(PREFIX)/include
+ 
+-.PHONEY:	install
++.PHONY:	install
+ install:	$(DYNAMIC) install-headers
+ 	@echo "[Install Dynamic Lib]"
+ 	@install -m 0755 -d						$(DESTDIR)$(PREFIX)/lib
+@@ -97,13 +97,13 @@ install:	$(DYNAMIC) install-headers
+ 	@ln -sf $(DESTDIR)$(PREFIX)/lib/libwiringPiDev.so.$(VERSION)	$(DESTDIR)/lib/libwiringPiDev.so
+ 	@ldconfig
+ 
+-.PHONEY:	install-static
++.PHONY:	install-static
+ install-static:	$(STATIC) install-headers
+ 	@echo "[Install Static Lib]"
+ 	@install -m 0755 -d			$(DESTDIR)$(PREFIX)/lib
+ 	@install -m 0755 libwiringPiDev.a	$(DESTDIR)$(PREFIX)/lib
+ 
+-.PHONEY:	uninstall
++.PHONY:	uninstall
+ uninstall:
+ 	@echo "[UnInstall]"
+ 	@rm -f $(DESTDIR)$(PREFIX)/include/ds1302.h
+@@ -118,7 +118,7 @@ uninstall:
+ 	@ldconfig
+ 
+ 
+-.PHONEY:	depend
++.PHONY:	depend
+ depend:
+ 	makedepend -Y $(SRC)
+ 
+diff --git a/devLib/piGlow.h b/devLib/piGlow.h
+index d501c2c..a4d89d0 100644
+--- a/devLib/piGlow.h
++++ b/devLib/piGlow.h
+@@ -24,8 +24,8 @@
+ 
+ 
+ #define	PIGLOW_RED	0
+-#define	PIGLOW_YELLOW	1
+-#define	PIGLOW_ORANGE	2
++#define	PIGLOW_ORANGE	1
++#define	PIGLOW_YELLOW	2
+ #define	PIGLOW_GREEN	3
+ #define	PIGLOW_BLUE	4
+ #define	PIGLOW_WHITE	5
+diff --git a/examples/Makefile b/examples/Makefile
+index 571e341..c9967dc 100644
+--- a/examples/Makefile
++++ b/examples/Makefile
+@@ -43,6 +43,7 @@ SRC	=	blink.c blink8.c blink12.c					\
+ 		nes.c								\
+ 		softPwm.c softTone.c 						\
+ 		delayTest.c serialRead.c serialTest.c okLed.c ds1302.c		\
++		lowPower.c							\
+ 		rht03.c piglow.c
+ 
+ OBJ	=	$(SRC:.c=.o)
+diff --git a/examples/lowPower.c b/examples/lowPower.c
+new file mode 100644
+index 0000000..e901e7f
+--- /dev/null
++++ b/examples/lowPower.c
+@@ -0,0 +1,68 @@
++/*
++ * lowPower.c:
++ *	Check the Pi's LOW-Power signal.
++ *
++ *	This is a demonstration program that could be turned into some sort
++ *	of logger via e.g. syslog - however it's also probably something
++ *	that might be better handled by a future kernel - who knows.
++ *
++ * Copyright (c) 2014 Gordon Henderson.
++ ***********************************************************************
++ * This file is part of wiringPi:
++ *	https://projects.drogon.net/raspberry-pi/wiringpi/
++ *
++ *    wiringPi is free software: you can redistribute it and/or modify
++ *    it under the terms of the GNU Lesser General Public License as published by
++ *    the Free Software Foundation, either version 3 of the License, or
++ *    (at your option) any later version.
++ *
++ *    wiringPi is distributed in the hope that it will be useful,
++ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *    GNU Lesser General Public License for more details.
++ *
++ *    You should have received a copy of the GNU Lesser General Public License
++ *    along with wiringPi.  If not, see <http://www.gnu.org/licenses/>.
++ ***********************************************************************
++ */
++
++#include <stdio.h>
++#include <time.h>
++#include <wiringPi.h>
++
++
++#define	LOW_POWER	35
++
++/*
++ * lowPower:
++ *	This is an ISR that waits for the low-power signal going low and
++ *	prints the result.
++ *********************************************************************************
++ */
++
++void lowPower (void)
++{
++  time_t t ;
++
++  time (&t) ;
++  printf ("%s: LOW POWER DETECTED\n", ctime (&t)) ;
++}
++
++
++/*
++ *********************************************************************************
++ * main
++ *********************************************************************************
++ */
++
++int main (void)
++{
++  wiringPiSetupGpio () ;	// GPIO mode as it's an internal pin
++
++  wiringPiISR (LOW_POWER, INT_EDGE_FALLING, &lowPower) ;
++
++  for (;;)
++    delay (1000) ;
++
++  return 0 ;
++}
+diff --git a/examples/spiSpeed.c b/examples/spiSpeed.c
+new file mode 100644
+index 0000000..0208f0a
+--- /dev/null
++++ b/examples/spiSpeed.c
+@@ -0,0 +1,118 @@
++/*
++ * spiSpeed.c:
++ *	Code to measure the SPI speed/latency.
++ *	Copyright (c) 2014 Gordon Henderson
++ ***********************************************************************
++ * This file is part of wiringPi:
++ *	https://projects.drogon.net/raspberry-pi/wiringpi/
++ *
++ *    wiringPi is free software: you can redistribute it and/or modify
++ *    it under the terms of the GNU Lesser General Public License as
++ *    published by the Free Software Foundation, either version 3 of the
++ *    License, or (at your option) any later version.
++ *
++ *    wiringPi is distributed in the hope that it will be useful,
++ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *    GNU Lesser General Public License for more details.
++ *
++ *    You should have received a copy of the GNU Lesser General Public
++ *    License along with wiringPi.
++ *    If not, see <http://www.gnu.org/licenses/>.
++ ***********************************************************************
++ */
++
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <stdint.h>
++#include <string.h>
++#include <errno.h>
++//#include <fcntl.h>
++//#include <sys/ioctl.h>
++//#include <linux/spi/spidev.h>
++
++#include <wiringPi.h>
++#include <wiringPiSPI.h>
++
++#define	TRUE	(1==1)
++#define	FALSE	(!TRUE)
++
++#define	SPI_CHAN		0
++#define	NUM_TIMES		100
++#define	MAX_SIZE		(1024*1024)
++
++static int myFd ;
++
++
++void spiSetup (int speed)
++{
++  if ((myFd = wiringPiSPISetup (SPI_CHAN, speed)) < 0)
++  {
++    fprintf (stderr, "Can't open the SPI bus: %s\n", strerror (errno)) ;
++    exit (EXIT_FAILURE) ;
++  }
++}
++
++
++int main (void)
++{
++  int speed, times, size ;
++  unsigned int start, end ;
++  int spiFail ;
++  unsigned char *myData ;
++  double timePerTransaction, perfectTimePerTransaction, dataSpeed ;
++
++  if ((myData = malloc (MAX_SIZE)) == NULL)
++  {
++    fprintf (stderr, "Unable to allocate buffer: %s\n", strerror (errno)) ;
++    exit (EXIT_FAILURE) ;
++  }
++
++  wiringPiSetup () ;
++
++  for (speed = 1 ; speed <= 32 ; speed *= 2)
++  {
++    printf ("+-------+--------+----------+----------+-----------+------------+\n") ;
++    printf ("|   MHz |   Size | mS/Trans |      TpS |    Mb/Sec | Latency mS |\n") ;
++    printf ("+-------+--------+----------+----------+-----------+------------+\n") ;
++
++    spiFail = FALSE ;
++    spiSetup (speed * 1000000) ;
++    for (size = 1 ; size <= MAX_SIZE ; size *= 2)
++    {
++      printf ("| %5d | %6d ", speed, size) ;
++
++      start = millis () ;
++      for (times = 0 ; times < NUM_TIMES ; ++times)
++	if (wiringPiSPIDataRW (SPI_CHAN, myData, size) == -1)
++	{
++	  printf ("SPI failure: %s\n", strerror (errno)) ;
++	  spiFail = TRUE ;
++	  break ;
++	}
++      end = millis () ;
++
++      if (spiFail)
++	break ;
++
++      timePerTransaction        = ((double)(end - start) / (double)NUM_TIMES) / 1000.0 ;
++      dataSpeed                 =  (double)(size * 8)    / (1024.0 * 1024.0) / timePerTransaction  ;
++      perfectTimePerTransaction = ((double)(size * 8))   / ((double)(speed * 1000000)) ;
++
++      printf ("| %8.3f ", timePerTransaction * 1000.0) ;
++      printf ("| %8.1f ", 1.0 / timePerTransaction) ;
++      printf ("| %9.5f ", dataSpeed) ;
++      printf ("|   %8.5f ", (timePerTransaction - perfectTimePerTransaction) * 1000.0) ;
++      printf ("|\n") ;
++
++    }
++
++    close (myFd) ;
++    printf ("+-------+--------+----------+----------+-----------+------------+\n") ;
++    printf ("\n") ;
++  }
++
++  return 0 ;
++}
+diff --git a/gpio/gpio.c b/gpio/gpio.c
+index c440874..43e6934 100644
+--- a/gpio/gpio.c
++++ b/gpio/gpio.c
+@@ -2,7 +2,7 @@
+  * gpio.c:
+  *	Swiss-Army-Knife, Set-UID command-line interface to the Raspberry
+  *	Pi's GPIO.
+- *	Copyright (c) 2012-2013 Gordon Henderson
++ *	Copyright (c) 2012-2014 Gordon Henderson
+  ***********************************************************************
+  * This file is part of wiringPi:
+  *	https://projects.drogon.net/raspberry-pi/wiringpi/
+@@ -53,7 +53,7 @@ extern void doPins       (void) ;
+ #  define	FALSE	(1==2)
+ #endif
+ 
+-#define	VERSION			"2.20"
++#define	VERSION			"2.21"
+ #define	PI_USB_POWER_CONTROL	38
+ #define	I2CDETECT		"/usr/sbin/i2cdetect"
+ 
+@@ -612,23 +612,44 @@ static void doResetExternal (void)
+ 
+ static void doReset (char *progName)
+ {
+-  int pin ;
++  int model, rev, mem, maker, overVolted ;
++  int pin, endPin ;
++
++  printf ("GPIO Reset is dangerous!\n") ;
++  printf (" - Do Not rely on this to do anything sensible!\n") ;
+ 
+-  if (wiringPiNodes != NULL)	// External reset
++  if (wiringPiNodes != NULL)	// External
++  {
+     doResetExternal () ;
++    return ;
++  }
++
++  piBoardId (&model, &rev, &mem, &maker, &overVolted) ;
++
++  /**/ if ((model == PI_MODEL_A) || (model == PI_MODEL_B))
++    endPin = 16 ;
++  else if (model == PI_MODEL_BP)
++    endPin = 39 ;
++  else if (model == PI_MODEL_CM)
++  {
++    printf (" - Don't know how to reset a comput module:\n") ;
++    printf ("   Write a shell-script to reset the pins to the state you need.\n") ;
++    return ;
++  }
+   else
+   {
+-    doUnexportall (progName) ;
++    printf ("Oops - unable to determine board type... model: %d\n", model) ;
++    return ;
++  }
+ 
+-    for (pin = 0 ; pin < 64 ; ++pin)
+-    {
+-      if (wpiPinToGpio (pin) == -1)
+-	continue ;
++  for (pin = 0 ; pin <= endPin ; ++pin)
++  {
++    if (wpiPinToGpio (pin) == -1)
++      continue ;
+ 
+-      digitalWrite    (pin, LOW) ;
+-      pinMode         (pin, INPUT) ;
+-      pullUpDnControl (pin, PUD_OFF) ;
+-    }
++    digitalWrite    (pin, LOW) ;
++    pinMode         (pin, INPUT) ;
++    pullUpDnControl (pin, PUD_OFF) ;
+   }
+ }
+ 
+diff --git a/gpio/readall.c b/gpio/readall.c
+index 76b5cfc..aba8de8 100644
+--- a/gpio/readall.c
++++ b/gpio/readall.c
+@@ -278,23 +278,31 @@ void abReadall (int model, int rev)
+ 
+ 
+ /*
+- * bPlusReadall:
+- *	Read all the pins on the model B+
++ * piPlusReadall:
++ *	Read all the pins on the model A+ or the B+
+  *********************************************************************************
+  */
+ 
+-void bPlusReadall (void)
++void piPlusReadall (int model)
+ {
+   int pin ;
+ 
+-  printf (" +-----+-----+---------+------+---+--B Plus--+---+------+---------+-----+-----+\n") ;
++  if (model == PI_MODEL_AP)
++    printf (" +-----+-----+---------+------+---+--A Plus--+---+------+---------+-----+-----+\n") ;
++  else
++    printf (" +-----+-----+---------+------+---+--B Plus--+---+------+---------+-----+-----+\n") ;
++
+   printf (" | BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |\n") ;
+   printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
+   for (pin = 1 ; pin <= 40 ; pin += 2)
+     readallPhys (pin) ;
+   printf (" +-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+\n") ;
+   printf (" | BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |\n") ;
+-  printf (" +-----+-----+---------+------+---+--B Plus--+---+------+---------+-----+-----+\n") ;
++
++  if (model == PI_MODEL_AP)
++    printf (" +-----+-----+---------+------+---+--A Plus--+---+------+---------+-----+-----+\n") ;
++  else
++    printf (" +-----+-----+---------+------+---+--B Plus--+---+------+---------+-----+-----+\n") ;
+ }
+ 
+ 
+@@ -312,8 +320,8 @@ void doReadall (void)
+ 
+   /**/ if ((model == PI_MODEL_A) || (model == PI_MODEL_B))
+     abReadall (model, rev) ;
+-  else if (model == PI_MODEL_BP)
+-    bPlusReadall () ;
++  else if ((model == PI_MODEL_BP) || (model == PI_MODEL_AP))
++    piPlusReadall (model) ;
+   else if (model == PI_MODEL_CM)
+     cmReadall () ;
+   else
+diff --git a/pins/Makefile b/pins/Makefile
+index 5e200c2..fd34ee9 100644
+--- a/pins/Makefile
++++ b/pins/Makefile
+@@ -13,6 +13,6 @@ pdf:	pins.dvi
+ 	@dvipdf pins.dvi
+ 
+ 
+-.PHONEY:	clean
++.PHONY:	clean
+ clean:
+ 	@rm -f *.dvi *.aux *.log *.ps *.toc *.bak *~
+diff --git a/wiringPi/Makefile b/wiringPi/Makefile
+index 78d3612..4e3342e 100644
+--- a/wiringPi/Makefile
++++ b/wiringPi/Makefile
+@@ -77,18 +77,18 @@ $(DYNAMIC):	$(OBJ)
+ 	@echo [Compile] $<
+ 	@$(CC) -c $(CFLAGS) $< -o $@
+ 
+-.PHONEY:	clean
++.PHONY:	clean
+ clean:
+ 	@echo "[Clean]"
+ 	@rm -f $(OBJ) $(OBJ_I2C) *~ core tags Makefile.bak libwiringPi.*
+ 
+-.PHONEY:	tags
++.PHONY:	tags
+ tags:	$(SRC)
+ 	@echo [ctags]
+ 	@ctags $(SRC)
+ 
+ 
+-.PHONEY:	install-headers
++.PHONY:	install-headers
+ install-headers:
+ 	@echo "[Install Headers]"
+ 	@install -m 0755 -d			$(DESTDIR)$(PREFIX)/include
+@@ -116,7 +116,7 @@ install-headers:
+ 	@install -m 0644 pcf8591.h		$(DESTDIR)$(PREFIX)/include
+ 	@install -m 0644 sn3218.h		$(DESTDIR)$(PREFIX)/include
+ 
+-.PHONEY:	install
++.PHONY:	install
+ install:	$(DYNAMIC) install-headers
+ 	@echo "[Install Dynamic Lib]"
+ 	@install -m 0755 -d						$(DESTDIR)$(PREFIX)/lib
+@@ -124,13 +124,13 @@ install:	$(DYNAMIC) install-headers
+ 	@ln -sf $(DESTDIR)$(PREFIX)/lib/libwiringPi.so.$(VERSION)	$(DESTDIR)/lib/libwiringPi.so
+ 	@ldconfig
+ 
+-.PHONEY:	install-static
++.PHONY:	install-static
+ install-static:	$(STATIC) install-headers
+ 	@echo "[Install Static Lib]"
+ 	@install -m 0755 -d			$(DESTDIR)$(PREFIX)/lib
+ 	@install -m 0755 libwiringPi.a		$(DESTDIR)$(PREFIX)/lib
+ 
+-.PHONEY:	uninstall
++.PHONY:	uninstall
+ uninstall:
+ 	@echo "[UnInstall]"
+ 	@rm -f $(DESTDIR)$(PREFIX)/include/wiringPi.h
+@@ -160,7 +160,7 @@ uninstall:
+ 	@ldconfig
+ 
+ 
+-.PHONEY:	depend
++.PHONY:	depend
+ depend:
+ 	makedepend -Y $(SRC) $(SRC_I2C)
+ 
+diff --git a/wiringPi/wiringPi.c b/wiringPi/wiringPi.c
+index e7ae386..ba45f4d 100644
+--- a/wiringPi/wiringPi.c
++++ b/wiringPi/wiringPi.c
+@@ -203,13 +203,14 @@ static volatile uint32_t *timerIrqRaw ;
+ //	and PI_VERSION_X defines in wiringPi.h
+ //	Only intended for the gpio command - use at your own risk!
+ 
+-const char *piModelNames [5] =
++const char *piModelNames [6] =
+ {
+   "Unknown",
+   "Model A",
+   "Model B",
+   "Model B+",
+   "Compute Module",
++  "Model A+",
+ } ;
+ 
+ const char *piRevisionNames [5] =
+@@ -620,6 +621,7 @@ int wiringPiFailure (int fatal, const char *message, ...)
+  *	000f - Model B,  Rev 2,   512MB, Qisda
+  *	0010 - Model B+, Rev 1.2, 512MB, Sony
+  *	0011 - Pi CM,    Rev 1.2, 512MB, Sony
++ *	0012 - Model A+  Rev 1.2, 256MB, Sony
+  *
+  *	A small thorn is the olde style overvolting - that will add in
+  *		1000000
+@@ -687,10 +689,12 @@ int piBoardRev (void)
+   
+ // If you have overvolted the Pi, then it appears that the revision
+ //	has 100000 added to it!
++// The actual condition for it being set is:
++//	 (force_turbo || current_limit_override || temp_limit>85) && over_voltage>0
+ 
+   if (wiringPiDebug)
+     if (strlen (c) != 4)
+-      printf ("piboardRev: This Pi has/is overvolted!\n") ;
++      printf ("piboardRev: This Pi has/is (force_turbo || current_limit_override || temp_limit>85) && over_voltage>0\n") ;
+ 
+ // Isolate  last 4 characters:
+ 
+@@ -782,6 +786,7 @@ void piBoardId (int *model, int *rev, int *mem, int *maker, int *overVolted)
+   else if (strcmp (c, "000f") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 512 ; *maker = PI_MAKER_EGOMAN ; }
+   else if (strcmp (c, "0010") == 0) { *model = PI_MODEL_BP ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
+   else if (strcmp (c, "0011") == 0) { *model = PI_MODEL_CM ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
++  else if (strcmp (c, "0012") == 0) { *model = PI_MODEL_AP ; *rev = PI_VERSION_1_2 ; *mem = 256 ; *maker = PI_MAKER_SONY   ; }
+   else                              { *model = 0           ; *rev = 0              ; *mem =   0 ; *maker = 0 ;               }
+ }
+  
+@@ -1474,8 +1479,10 @@ int waitForInterrupt (int pin, int mS)
+ 
+ // Do a dummy read to clear the interrupt
+ //	A one character read appars to be enough.
++//	Followed by a seek to reset it.
+ 
+   (void)read (fd, &c, 1) ;
++  lseek (fd, 0, SEEK_SET) ;
+ 
+   return x ;
+ }
+diff --git a/wiringPi/wiringPi.h b/wiringPi/wiringPi.h
+index 2bc63ba..42265fc 100644
+--- a/wiringPi/wiringPi.h
++++ b/wiringPi/wiringPi.h
+@@ -75,6 +75,7 @@
+ #define	PI_MODEL_B		2
+ #define	PI_MODEL_BP		3
+ #define	PI_MODEL_CM		4
++#define	PI_MODEL_AP		5
+ 
+ #define	PI_VERSION_UNKNOWN	0
+ #define	PI_VERSION_1		1
+@@ -87,7 +88,7 @@
+ #define	PI_MAKER_SONY		2
+ #define	PI_MAKER_QISDA		3
+ 
+-extern const char *piModelNames    [5] ;
++extern const char *piModelNames    [6] ;
+ extern const char *piRevisionNames [5] ;
+ extern const char *piMakerNames    [4] ;
+ 
+-- 
+2.0.0.GIT
+
