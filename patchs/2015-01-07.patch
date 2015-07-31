@@ -1,0 +1,71 @@
+From d42e831089c9d15d229fc475d84dee9456527b42 Mon Sep 17 00:00:00 2001
+From: Gordon Henderson <projects@drogon.net>
+Date: Wed, 7 Jan 2015 14:26:17 +0000
+Subject: [PATCH] Updated versions for new maker - mbest
+
+---
+ gpio/gpio.c         | 2 +-
+ wiringPi/wiringPi.c | 4 +++-
+ wiringPi/wiringPi.h | 3 ++-
+ 3 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/gpio/gpio.c b/gpio/gpio.c
+index 43e6934..7881c65 100644
+--- a/gpio/gpio.c
++++ b/gpio/gpio.c
+@@ -53,7 +53,7 @@ extern void doPins       (void) ;
+ #  define	FALSE	(1==2)
+ #endif
+ 
+-#define	VERSION			"2.21"
++#define	VERSION			"2.22"
+ #define	PI_USB_POWER_CONTROL	38
+ #define	I2CDETECT		"/usr/sbin/i2cdetect"
+ 
+diff --git a/wiringPi/wiringPi.c b/wiringPi/wiringPi.c
+index ba45f4d..1c82aee 100644
+--- a/wiringPi/wiringPi.c
++++ b/wiringPi/wiringPi.c
+@@ -222,12 +222,13 @@ const char *piRevisionNames [5] =
+   "2",
+ } ;
+ 
+-const char *piMakerNames [4] =
++const char *piMakerNames [5] =
+ {
+   "Unknown",
+   "Egoman",
+   "Sony",
+   "Qusda",
++  "MBest",
+ } ;
+ 
+ 
+@@ -787,6 +788,7 @@ void piBoardId (int *model, int *rev, int *mem, int *maker, int *overVolted)
+   else if (strcmp (c, "0010") == 0) { *model = PI_MODEL_BP ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
+   else if (strcmp (c, "0011") == 0) { *model = PI_MODEL_CM ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_SONY   ; }
+   else if (strcmp (c, "0012") == 0) { *model = PI_MODEL_AP ; *rev = PI_VERSION_1_2 ; *mem = 256 ; *maker = PI_MAKER_SONY   ; }
++  else if (strcmp (c, "0013") == 0) { *model = PI_MODEL_BP ; *rev = PI_VERSION_1_2 ; *mem = 512 ; *maker = PI_MAKER_MBEST  ; }
+   else                              { *model = 0           ; *rev = 0              ; *mem =   0 ; *maker = 0 ;               }
+ }
+  
+diff --git a/wiringPi/wiringPi.h b/wiringPi/wiringPi.h
+index 42265fc..2b3e295 100644
+--- a/wiringPi/wiringPi.h
++++ b/wiringPi/wiringPi.h
+@@ -87,10 +87,11 @@
+ #define	PI_MAKER_EGOMAN		1
+ #define	PI_MAKER_SONY		2
+ #define	PI_MAKER_QISDA		3
++#define	PI_MAKER_MBEST		4
+ 
+ extern const char *piModelNames    [6] ;
+ extern const char *piRevisionNames [5] ;
+-extern const char *piMakerNames    [4] ;
++extern const char *piMakerNames    [5] ;
+ 
+ 
+ //	Intended for the GPIO program Use at your own risk.
+-- 
+2.0.0.GIT
+

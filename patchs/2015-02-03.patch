@@ -1,0 +1,251 @@
+From 72b2af231be337d45a557ce6ca3ed1eeb6675ffd Mon Sep 17 00:00:00 2001
+From: Gordon Henderson <projects@drogon.net>
+Date: Tue, 3 Feb 2015 14:53:32 +0000
+Subject: [PATCH] OK. So the Pi v2 I have had older firmware and it wasn't
+ quite the same as everyone elses.
+
+This is an interim version which will work on both Pi v1 and v2
+boards until I have a bit more time to implement the correct
+stuff for v2.
+---
+ VERSION             |  2 +-
+ build               | 28 ++++++++++----------
+ gpio/gpio.1         |  8 +++---
+ gpio/gpio.c         | 12 ++++++---
+ gpio/version.h      |  2 +-
+ wiringPi/wiringPi.c | 73 ++++++++++++++++++++++++++++++++++++++---------------
+ 6 files changed, 82 insertions(+), 43 deletions(-)
+
+diff --git a/VERSION b/VERSION
+index fd6915c..8bd2249 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-2.24
++2.25
+diff --git a/build b/build
+index fb5a8b7..d38ad1b 100755
+--- a/build
++++ b/build
+@@ -102,20 +102,20 @@ fi
+ 
+   hardware=`fgrep Hardware /proc/cpuinfo | head -1 | awk '{ print $3 }'`
+ 
+-  if [ x$hardware != "xBCM2708" ]; then
+-    echo ""
+-    echo "   +------------------------------------------------------------+"
+-    echo "   |   wiringPi is designed to run on the Raspberry Pi only.    |"
+-    echo "   |   This processor does not appear to be a Raspberry Pi.     |"
+-    echo "   +------------------------------------------------------------+"
+-    echo "   | In the unlikely event that you think it is a Raspberry Pi, |"
+-    echo "   | then please accept my apologies and email the contents of  |"
+-    echo "   | /proc/cpuinfo to projects@drogon.net.                      |"
+-    echo "   |    - Thanks, Gordon                                        |"
+-    echo "   +------------------------------------------------------------+"
+-    echo ""
+-    exit 1
+-  fi
++#  if [ x$hardware != "xBCM2708" ]; then
++#    echo ""
++#    echo "   +------------------------------------------------------------+"
++#    echo "   |   wiringPi is designed to run on the Raspberry Pi only.    |"
++#    echo "   |   This processor does not appear to be a Raspberry Pi.     |"
++#    echo "   +------------------------------------------------------------+"
++#    echo "   | In the unlikely event that you think it is a Raspberry Pi, |"
++#    echo "   | then please accept my apologies and email the contents of  |"
++#    echo "   | /proc/cpuinfo to projects@drogon.net.                      |"
++#    echo "   |    - Thanks, Gordon                                        |"
++#    echo "   +------------------------------------------------------------+"
++#    echo ""
++#    exit 1
++#  fi
+ 
+ 
+   echo
+diff --git a/gpio/gpio.1 b/gpio/gpio.1
+index 2d3b860..77b41bf 100644
+--- a/gpio/gpio.1
++++ b/gpio/gpio.1
+@@ -185,9 +185,11 @@ Print a list (if any) of all the exported GPIO pins and their current values.
+ .TP
+ .B export
+ Export a GPIO pin in the \fI/sys/class/gpio\fR directory. Use like the
+-mode command above however only \fIin\fR and \fIout\fR are supported at
+-this time. Note that the pin number is the \fBBCM_GPIO\fR number and
+-not the wiringPi number.
++mode command above however only \fIin\fR, \fIout\fR, \fIhigh\fR and
++\fRlow\fR are supported at this time. Note that the pin number is the
++\fBBCM_GPIO\fR number and not the wiringPi number. The \fIhigh\fR and
++\fIlow\fR commands pre-set the output value at the same time as the
++export to output mode.
+ 
+ Once a GPIO pin has been exported, the \fBgpio\fR program changes the
+ ownership of the \fI/sys/class/gpio/gpioX/value\fR and if present in
+diff --git a/gpio/gpio.c b/gpio/gpio.c
+index 461274f..6dc6113 100644
+--- a/gpio/gpio.c
++++ b/gpio/gpio.c
+@@ -434,19 +434,23 @@ void doExport (int argc, char *argv [])
+     exit (1) ;
+   }
+ 
+-  /**/ if ((strcasecmp (mode, "in")  == 0) || (strcasecmp (mode, "input")  == 0))
++  /**/ if ((strcasecmp (mode, "in")   == 0) || (strcasecmp (mode, "input")  == 0))
+     fprintf (fd, "in\n") ;
+-  else if ((strcasecmp (mode, "out") == 0) || (strcasecmp (mode, "output") == 0))
++  else if ((strcasecmp (mode, "out")  == 0) || (strcasecmp (mode, "output") == 0))
+     fprintf (fd, "out\n") ;
++  else if ((strcasecmp (mode, "high") == 0) || (strcasecmp (mode, "up")     == 0))
++    fprintf (fd, "high\n") ;
++  else if ((strcasecmp (mode, "low")  == 0) || (strcasecmp (mode, "down")   == 0))
++    fprintf (fd, "low\n") ;
+   else
+   {
+-    fprintf (stderr, "%s: Invalid mode: %s. Should be in or out\n", argv [1], mode) ;
++    fprintf (stderr, "%s: Invalid mode: %s. Should be in, out, high or low\n", argv [1], mode) ;
+     exit (1) ;
+   }
+ 
+   fclose (fd) ;
+ 
+-// Change ownership so the current user can actually use it!
++// Change ownership so the current user can actually use it
+ 
+   sprintf (fName, "/sys/class/gpio/gpio%d/value", pin) ;
+   changeOwner (argv [0], fName) ;
+diff --git a/gpio/version.h b/gpio/version.h
+index 5416bcb..fd96a9b 100644
+--- a/gpio/version.h
++++ b/gpio/version.h
+@@ -1 +1 @@
+-#define VERSION "2.24"
++#define VERSION "2.25"
+diff --git a/wiringPi/wiringPi.c b/wiringPi/wiringPi.c
+index e36af8a..be636a0 100644
+--- a/wiringPi/wiringPi.c
++++ b/wiringPi/wiringPi.c
+@@ -667,19 +667,25 @@ int piBoardRev (void)
+ // Start by looking for the Architecture, then we can look for a B2 revision....
+ 
+   while (fgets (line, 120, cpuFd) != NULL)
+-    if (strncmp (line, "model name", 10) == 0)
++    if (strncmp (line, "Hardware", 8) == 0)
+       break ;
+ 
+-  if (strncmp (line, "model name", 10) != 0)
+-    piBoardRevOops ("No \"model name\" line") ;
++  if (strncmp (line, "Hardware", 8) != 0)
++    piBoardRevOops ("No \"Hardware\" line") ;
+ 
+   if (wiringPiDebug)
+-    printf ("piboardRev: Model name: %s\n", line) ;
++    printf ("piboardRev: Hardware: %s\n", line) ;
+ 
+-// See if it's v7
++// See if it's BCM2708 or BCM2709
+ 
+-  if (strstr (line, "ARMv7") != NULL)
++  if (strstr (line, "BCM2709") != NULL)
+     piModel2 = TRUE ;
++  else if (strstr (line, "BCM2708") == NULL)
++  {
++    fprintf (stderr, "Unable to determine hardware version. I see: %s,\n", line) ;
++    fprintf (stderr, " - expecting BCM2708 or BCM2709. Please report this to projects@drogon.net\n") ;
++    exit (EXIT_FAILURE) ;
++  }
+ 
+ // Now do the rest of it as before
+ 
+@@ -750,6 +756,15 @@ int piBoardRev (void)
+  *	as much details as we can.
+  *	This is undocumented and really only intended for the GPIO command.
+  *	Use at your own risk!
++ *
++ * for Pi v2:
++ *   [USER:8] [NEW:1] [MEMSIZE:3] [MANUFACTURER:4] [PROCESSOR:4] [TYPE:8] [REV:4]
++ *   NEW          23: will be 1 for the new scheme, 0 for the old scheme
++ *   MEMSIZE      20: 0=256M 1=512M 2=1G
++ *   MANUFACTURER 16: 0=SONY 1=EGOMAN 2=EMBEST
++ *   PROCESSOR    12: 0=2835 1=2836
++ *   TYPE         04: 0=MODELA 1=MODELB 2=MODELA+ 3=MODELB+ 4=Pi2 MODEL B 5=ALPHA 6=CM
++ *   REV          00: 0=REV0 1=REV1 2=REV2
+  *********************************************************************************
+  */
+ 
+@@ -759,6 +774,9 @@ void piBoardId (int *model, int *rev, int *mem, int *maker, int *overVolted)
+   char line [120] ;
+   char *c ;
+ 
++//	Will deal with the properly later on - for now, lets just get it going...
++//  unsigned int modelNum ;
++
+   (void)piBoardRev () ;	// Call this first to make sure all's OK. Don't care about the result.
+ 
+   if ((cpuFd = fopen ("/proc/cpuinfo", "r")) == NULL)
+@@ -781,34 +799,49 @@ void piBoardId (int *model, int *rev, int *mem, int *maker, int *overVolted)
+   if (wiringPiDebug)
+     printf ("piboardId: Revision string: %s\n", line) ;
+ 
++  if (piModel2)
++  {
++
++// Scan to the colon
++
++    for (c = line ; *c ; ++c)
++      if (*c == ':')
++	break ;
++
++    if (*c != ':')
++      piBoardRevOops ("Bogus \"Revision\" line") ;
++
++//    modelNum = (unsigned int)strtol (++c, NULL, 16) ; // Hex number with no leading 0x
++    
++    *model = PI_MODEL_2  ;
++    *rev   = PI_VERSION_1_1 ;
++    *mem   = 1024 ;
++    *maker = PI_MAKER_SONY   ;
++  }
++  else
++  {
++
+ // Scan to first digit
+ 
+-  for (c = line ; *c ; ++c)
+-    if (isdigit (*c))
+-      break ;
++    for (c = line ; *c ; ++c)
++      if (isdigit (*c))
++	break ;
+ 
+ // Make sure its long enough
+ 
+-  if (strlen (c) < 4)
+-    piBoardRevOops ("Bogus \"Revision\" line") ;
++    if (strlen (c) < 4)
++      piBoardRevOops ("Bogus \"Revision\" line") ;
+ 
+ // If longer than 4, we'll assume it's been overvolted
+ 
+-  *overVolted = strlen (c) > 4 ;
++    *overVolted = strlen (c) > 4 ;
+   
+ // Extract last 4 characters:
+ 
+-  c = c + strlen (c) - 4 ;
++    c = c + strlen (c) - 4 ;
+ 
+ // Fill out the replys as appropriate
+ 
+-  if (piModel2)
+-  {
+-    /**/ if (strcmp (c, "0010") == 0) { *model = PI_MODEL_2  ; *rev = PI_VERSION_1_1 ; *mem = 1024 ; *maker = PI_MAKER_SONY   ; }
+-    else                              { *model = 0           ; *rev = 0              ; *mem =    0 ; *maker = 0 ;               }
+-  }
+-  else
+-  {
+     /**/ if (strcmp (c, "0002") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_1   ; *mem = 256 ; *maker = PI_MAKER_EGOMAN ; }
+     else if (strcmp (c, "0003") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_1_1 ; *mem = 256 ; *maker = PI_MAKER_EGOMAN ; }
+     else if (strcmp (c, "0004") == 0) { *model = PI_MODEL_B  ; *rev = PI_VERSION_2   ; *mem = 256 ; *maker = PI_MAKER_SONY   ; }
+-- 
+2.0.0.GIT
+
