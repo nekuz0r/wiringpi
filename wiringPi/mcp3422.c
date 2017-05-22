@@ -1,8 +1,9 @@
 /*
  * mcp3422.c:
- *	Extend wiringPi with the MCP3422 I2C ADC chip
- *	Also works for the MCP3423 and MCP3224 (4 channel) chips
- *	Copyright (c) 2013 Gordon Henderson
+ *	Extend wiringPi with the MCP3422/3/4 I2C ADC chip
+ *	This code assumes single-ended mode only.
+ *	Tested on actual hardware: 20th Feb 2016.
+ *	Copyright (c) 2013-2016 Gordon Henderson
  ***********************************************************************
  * This file is part of wiringPi:
  *	https://projects.drogon.net/raspberry-pi/wiringpi/
@@ -29,13 +30,29 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <linux/spi/spidev.h>
 
 #include <wiringPi.h>
 #include <wiringPiI2C.h>
 
 #include "mcp3422.h"
 
+
+/*
+ * waitForConversion:
+ *	Common code to wait for the ADC to finish conversion
+ *********************************************************************************
+ */
+
+void waitForConversion (int fd, unsigned char *buffer, int n)
+{
+  for (;;)
+  {
+    read (fd, buffer, n) ;
+    if ((buffer [n-1] & 0x80) == 0)
+      break ;
+    delay (1) ;
+  }
+}
 
 /*
  * myAnalogRead:
@@ -48,18 +65,18 @@ int myAnalogRead (struct wiringPiNodeStruct *node, int chan)
   unsigned char config ;
   unsigned char buffer [4] ;
   int value = 0 ;
+  int realChan = (chan & 3) - node->pinBase ;
 
   // One-shot mode, trigger plus the other configs.
-  config = 0x80 | ((chan - node->pinBase) << 5) | (node->data0 << 2) | (node->data1) ;
+  config = 0x80 | (realChan << 5) | (node->data0 << 2) | (node->data1) ;
   
   wiringPiI2CWrite (node->fd, config) ;
   
   switch (node->data0)	// Sample rate
   {
     case MCP3422_SR_3_75:			// 18 bits
-      delay (270) ;
-      read (node->fd, buffer, 4) ;
-      value = ((buffer [0] & 0x1) << 16) | (buffer [1] << 8) | buffer [2] ;
+      waitForConversion (node->fd, &buffer [0], 4) ;
+      value = ((buffer [0] & 3) << 16) | (buffer [1] << 8) | buffer [2] ;
       if (buffer [0] & 0x2)
       {
         value = ~(0x20000 - value) + 1 ;
@@ -67,8 +84,7 @@ int myAnalogRead (struct wiringPiNodeStruct *node, int chan)
       break ;
 
     case MCP3422_SR_15:				// 16 bits
-      delay (70) ;
-      read (node->fd, buffer, 3) ;
+      waitForConversion (node->fd, buffer, 3) ;
       value = ((buffer [0] & 0x7F) << 8) | buffer [1] ;
       if (buffer [0] & 0x80)
       {
@@ -77,8 +93,7 @@ int myAnalogRead (struct wiringPiNodeStruct *node, int chan)
       break ;
 
     case MCP3422_SR_60:				// 14 bits
-      delay (17) ;
-      read (node->fd, buffer, 3) ;
+      waitForConversion (node->fd, buffer, 3) ;
       value = ((buffer [0] & 0x1F) << 8) | buffer [1] ;
       if (buffer [0] & 0x20)
       {
@@ -86,10 +101,9 @@ int myAnalogRead (struct wiringPiNodeStruct *node, int chan)
       }
       break ;
 
-    case MCP3422_SR_240:			// 12 bits
-      delay (5) ;
-      read (node->fd, buffer, 3) ;
-      value = ((buffer [0] & 0x07) << 8) | buffer [1] ;
+    case MCP3422_SR_240:			// 12 bits - default
+      waitForConversion (node->fd, buffer, 3) ;
+      value = ((buffer [0] & 0x0F) << 8) | buffer [1] ;
       if (buffer [0] & 0x8)
       {
         value = ~(0x800 - value) + 1 ;
@@ -113,7 +127,7 @@ int mcp3422Setup (int pinBase, int i2cAddress, int sampleRate, int gain)
   struct wiringPiNodeStruct *node ;
 
   if ((fd = wiringPiI2CSetup (i2cAddress)) < 0)
-    return fd ;
+    return FALSE ;
 
   node = wiringPiNewNode (pinBase, 4) ;
 
@@ -122,5 +136,5 @@ int mcp3422Setup (int pinBase, int i2cAddress, int sampleRate, int gain)
   node->data1      = gain ;
   node->analogRead = myAnalogRead ;
 
-  return 0 ;
+  return TRUE ;
 }
